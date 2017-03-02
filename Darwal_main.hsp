@@ -1,0 +1,199 @@
+;Darwal OS
+
+*dll
+#uselib "user32.dll"
+	#func SetParentA "SetParent" int,int					;親子ウィンドウの作成に使う
+	#cfunc WindowFromPointA "WindowFromPoint" int, int		;ウィンドウを動かすときに使う
+
+#module
+
+;関数の登録
+
+#defcfunc click_range int mx, int my, int mx2, int my2						;指定された範囲内にマウスがあるか確認する関数
+	if mx <= mousex and mx2 >= mousex and my <= mousey and my2 >= mousey {
+		return 1
+	}else{
+		return 0
+	}
+
+;新規命令の登録
+
+#deffunc cmes str ctext, int cx, int cy, int cx2, int cy2	;文字を中央に表示
+	#include "user32.as"
+	if cx2=0 : cx2=scx		;cx2が省略されている場合、画面右端の座標をcx2に代入
+	if cy2=0 : cy2=scy		;cy2が省略されている場合、画面下端の座標をcy2に代入
+	RECT = cx, cy, cx2, cy2
+	DrawText hdc, ctext, -1, varptr(RECT), $01
+	redraw 1
+	return
+	
+#deffunc gblur int p1, int p2	;画像をぼかす（hsp/sample/new/gblur.hsp）
+	gmode 3, ginfo_sx, ginfo_sy, 128
+	if (p2&1)=0 {
+		repeat p1
+		pos 1,0:gcopy ginfo(3)
+		pos 0,0:gcopy ginfo(3),2,0
+		loop
+	}
+	if (p2&2)=0 {
+		repeat p1
+		pos 0,1:gcopy ginfo(3)
+		pos 0,0:gcopy ginfo(3),0,2
+		loop
+	}
+	return
+	
+#deffunc boxfa int ax, int ay, int bx, int by								;半透明色表示命令
+	pdx = ax, bx, bx, ax
+	pdy = ay, ay, by, by
+	gsquare -1,pdx, pdy
+	return
+	
+#deffunc windowmake int wID, int windowx, int windowy, int window_mode		;ウィンドウの表示
+	bgscr wID,windowx,windowy
+	
+	phwnd@.wID = hwnd
+	windows@=windows@+1		;子ウィンドウの総数
+	windowx@=windowx
+	windowy@=windowy
+	
+	SetParent phwnd@.wID,phwnd@.0
+	
+	new_wID@++						;次回ウィンドウを作るときのウィンドウID
+	windowmode@.wID@ = window_mode	;ウィンドウモード
+	
+	gsel wID@
+	return
+	
+#global
+
+*variables
+	/*変数の登録*/
+	wID = 1000
+	new_wID = wID + 1
+	first_wID = new_wID
+	window_data = ""
+	
+	windowx = 1024 : windowy = 576
+	
+	systemfont = "Meiryo"
+	
+*buffering
+	celload "System/Computer/C/darwal/img/darwal_logo.png", 1
+	
+	celload "System/Computer/C/darwal/img/icons/folder.png", 2
+	
+*register_wID_of_parent_window
+	/*親ウィンドウのウィンドウID（wID）登録*/
+	screen 0, 1024, 576
+	
+	phwnd.0 = hwnd
+	
+*startup
+	repeat 255
+		redraw 0
+	
+		color cnt, cnt, cnt : boxf
+		
+		redraw 1
+		await 10
+	loop
+	
+	repeat 128
+		redraw 0
+	
+		color 255, 255, 255 : boxf
+		
+		gmode 3,,,cnt*2
+		pos windowx/2-113, windowy/2-27 : gcopy 1, 0, 0, 226, 54
+		
+		redraw 1
+		await 10
+	loop
+	
+	pos windowx/2-113, windowy/2-27 : gcopy 1, 0, 0, 226, 54
+
+*windowtest
+	onclick gosub *on_click
+	
+	objimage 2 : objsize 64, 64
+	pos 30, 10 : button"",*window_maker
+	
+	color 0, 0, 0 : font systemfont, 12
+	cmes "Add New Window", 10, 10+64, 10+100, 10+64+20
+	
+	stop
+	
+*window_maker
+	wID = new_wID
+	
+	windowmake wID, 800, 500, 1
+	
+	color 255, 255, 255 : boxf
+	color 230, 230, 230 : boxf 1, 1, 798, 498
+	
+	button gosub "消す", *window_close
+	color : mes "ウィンドウID:"+wID+""
+	
+	notesel window_data
+	noteadd "1", (wID-first_wID), 1
+	
+	stop
+	
+*window_close
+	/*ウィンドウを消す（最小化ではない）*/
+	
+	extant_window = 0
+	
+	repeat new_wID - first_wID
+		;現存する（＝まだ消されていない）ウィンドウがいくつあるか調べる
+		notesel window_data
+		noteget window_data_buf, cnt
+		
+		if window_data_buf = "1" {
+			extant_window ++
+		}
+		
+		;現在アクティブな子ウィンドウを検出（どのウィンドウを消すか）
+		if WindowFromPointA( ginfo(0), ginfo(1) ) == phwnd(cnt+1) {
+			wID = extant_window + 1 + first_wID
+			break
+		}
+	loop
+	
+	;ウィンドウが検出できなかった場合は戻る
+	if wID = 0 {
+		return
+	}
+	
+	notesel window_data
+	noteadd "0", (wID-first_wID), 1
+	
+	gsel wID, -1
+	return
+
+*on_click
+	/*親ウィンドウ・子ウィンドウ問わずクリックされたときの動作*/
+	
+	//どこにも当てはまらない場合、子ウィンドウを動かす
+	old=now
+	
+	;現在アクティブな子ウィンドウを検出
+	repeat new_wID - 1
+		if WindowFromPointA( ginfo(0), ginfo(1) ) == phwnd(cnt+1) : wID = cnt+1 : break
+	loop
+	
+	if wID = 0 or windowmode.wID = 2 {
+		gosub *clicked_on_other_than_windows						;どの子ウィンドウも動かしていなかった場合、或いは不可動ウィンドウであった場合
+		return
+	}
+		
+	gsel wID
+	sendmsg phwnd.wID,$00A1,2,0 
+	
+	return
+	
+*clicked_on_other_than_windows
+	/*子ウィンドウを動かす以外の目的でクリックされたときの動作*/
+	
+	return
