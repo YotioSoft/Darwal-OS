@@ -4,6 +4,7 @@
 #uselib "user32.dll"
 	#func SetParentA "SetParent" int,int					;親子ウィンドウの作成に使う
 	#cfunc WindowFromPointA "WindowFromPoint" int, int		;ウィンドウを動かすときに使う
+	#func GetFocusA "GetFocus"								;フォーカスのあるウィンドウのハンドルを取得
 
 #module
 
@@ -133,6 +134,7 @@
 	color 230, 230, 230 : boxf 1, 1, 798, 498
 	
 	button gosub "消す", *window_close
+		close_button_hwnd(wID-first_wID) = objinfo(stat, 2)
 	color : mes "ウィンドウID:"+wID+""
 	
 	notesel window_data
@@ -147,46 +149,56 @@
 	
 	repeat new_wID - first_wID
 		;現存する（＝まだ消されていない）ウィンドウがいくつあるか調べる
-		notesel window_data
-		noteget window_data_buf, cnt
-		
-		if window_data_buf = "1" {
-			extant_window ++
-		}
-		
+			notesel window_data
+			noteget window_data_buf, cnt
+			
+			if window_data_buf = "1" {
+				extant_window ++
+			}
+	
 		;現在アクティブな子ウィンドウを検出（どのウィンドウを消すか）
-		if WindowFromPointA( ginfo(0), ginfo(1) ) == phwnd(cnt+1) {
-			wID = extant_window + 1 + first_wID
-			break
-		}
+			GetFocusA : Focus_hand = stat
+		
+			gsel 0
+			title "Focus_hand="+Focus_hand+" close_button_hwnd(cnt)="+close_button_hwnd(cnt)+""
+	
+			;ウィンドウを消すボタンと一致していればそのボタンが設置されているウィンドウを消す
+			if Focus_hand == close_button_hwnd(cnt) {
+				clear_wID = cnt+first_wID
+				gsel clear_wID, -1
+			
+				notesel window_data
+				noteadd "0", (clear_wID-first_wID), 1
+					
+				break
+			}
+	
 	loop
 	
-	;ウィンドウが検出できなかった場合は戻る
-	if wID = 0 {
-		return
-	}
-	
-	notesel window_data
-	noteadd "0", (wID-first_wID), 1
-	
-	gsel wID, -1
+	gsel 0
 	return
 
 *on_click
 	/*親ウィンドウ・子ウィンドウ問わずクリックされたときの動作*/
 	
-	//どこにも当てはまらない場合、子ウィンドウを動かす
-	old=now
+	//子ウィンドウを動かす
+		old=now
 	
-	;現在アクティブな子ウィンドウを検出
-	repeat new_wID - 1
-		if WindowFromPointA( ginfo(0), ginfo(1) ) == phwnd(cnt+1) : wID = cnt+1 : break
-	loop
-	
-	if wID = 0 or windowmode.wID = 2 {
-		gosub *clicked_on_other_than_windows						;どの子ウィンドウも動かしていなかった場合、或いは不可動ウィンドウであった場合
-		return
-	}
+		;現在アクティブな子ウィンドウを検出（どのウィンドウを消すか）
+			GetFocusA : Focus_hand = stat
+		
+			gsel 0
+			title "Focus_hand="+Focus_hand+""
+		
+		;現在アクティブな子ウィンドウを検出
+			repeat new_wID - 1
+				if WindowFromPointA( ginfo(0), ginfo(1) ) == phwnd(cnt+1) : wID = cnt+1 : break
+			loop
+			
+			if wID = 0 or windowmode.wID = 2 {
+				gosub *clicked_on_other_than_windows						;どの子ウィンドウも動かしていなかった場合、或いは不可動ウィンドウであった場合
+				return
+			}
 		
 	gsel wID
 	sendmsg phwnd.wID,$00A1,2,0 
