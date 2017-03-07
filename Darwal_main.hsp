@@ -75,14 +75,34 @@
 	first_wID = new_wID
 	window_data = ""
 	
+	new_eID = -1
+	
 	windowx = 1024 : windowy = 576
 	
 	systemfont = "Meiryo"
 	
-*buffering
-	celload "System/Computer/C/darwal/img/darwal_logo.png", 1
+	directory = dirinfo(0)
 	
-	celload "System/Computer/C/darwal/img/icons/folder.png", 2
+	sdim filelist, 1024, 1000, 0
+	sdim filelist_with_path, 1024, 1000, 0
+	sdim filelist_category, 1024, 1000, 0
+	
+*buffering
+	chdir "System/Computer/C§Drive/darwal/img/"
+	
+	celload "darwal_logo.png", 1
+	
+	celload "icons/folder.png", 2
+	
+	//エクスプローラー向け
+		celload "icons/explorer/_.png", 3	; 最小化ボタン
+		celload "icons/explorer/x.png", 4	; 閉じるボタン
+	
+		celload "icons/explorer/folder.png", 5	; フォルダアイコン
+		celload "icons/explorer/drive.png", 6	; ドライブアイコン
+		celload "icons/explorer/file.png", 7	; ファイルアイコン
+	
+	chdir directory
 	
 *register_wID_of_parent_window
 	/*親ウィンドウのウィンドウID（wID）登録*/
@@ -114,33 +134,152 @@
 	
 	pos windowx/2-113, windowy/2-27 : gcopy 1, 0, 0, 226, 54
 
-*windowtest
+*Desktop
 	onclick gosub *on_click
 	
 	objimage 2 : objsize 64, 64
-	pos 30, 10 : button"",*window_maker
+	pos 30, 10 : button"", *File_Explorer
 	
 	color 0, 0, 0 : font systemfont, 12
-	cmes "Add New Window", 10, 10+64, 10+100, 10+64+20
+	cmes "Explorer", 10, 10+64, 10+100, 10+64+20
 	
 	stop
 	
-*window_maker
+*File_Explorer
+	now = "File_Explorer"
 	wID = new_wID
 	
-	windowmake wID, 800, 500, 1
+	new_eID += 1
+	eID = new_eID
 	
-	color 255, 255, 255 : boxf
-	color 230, 230, 230 : boxf 1, 1, 798, 498
+	notesel File_Explorer__Dir_buf
+	noteadd ""+directory+"\\System\\Computer", eID, 1
 	
-	button gosub "消す", *window_close
+	WindowSize_X = 800
+	WindowSize_Y = 500
+	
+	windowmake wID, WindowSize_X, WindowSize_Y, 1
+	
+	eID_hwnd(eID) = hwnd
+	eID_wID(eID) = wID
+	
+	onclick gosub *on_click
+	
+	//最小化ボタン
+		objimage 3, 0, 0, 32, 32 : objsize 32, 32
+		pos WindowSize_X-64, 0 : button gosub "", *window_minimization
+		
+	//閉じるボタン
+		objimage 4, 0, 0, 32, 32 : objsize 32, 32
+		pos WindowSize_X-32, 0 : button gosub "", *window_close
 		close_button_hwnd(wID-first_wID) = objinfo(stat, 2)
-	color : mes "ウィンドウID:"+wID+""
+	
+*File_Explorer__draw
+	//どのエクスプローラーがアクティブか確認
+		GetFocusA : Focus_hand = stat
+	
+		eID = -1
+		
+		repeat new_eID+1
+			if eID_hwnd(cnt) = Focus_hand {
+				eID = cnt
+				break
+			}
+		loop
+	
+		gsel eID_wID(eID)
+		
+	//背景色
+		color 250, 250, 250 : boxf
+	
+	//エクスプローラー上部のタブ
+		File_Explorer__border_Tabmenu_y = 50
+		color 0, 162, 232 : boxf 0, 0, WindowSize_X-1, File_Explorer__border_Tabmenu_y
+	
+	//エクスプローラー2段めのメニュー
+		File_Explorer__border_2nd_menu_y = 80
+		color 240, 240, 240 : boxf 0, File_Explorer__border_Tabmenu_y, WindowSize_X, File_Explorer__border_2nd_menu_y
+	
+	//エクスプローラー左側のメニュー
+		File_Explorer__border_Sidemenu_x = 200
+		color 50, 50, 50 : boxf 0, File_Explorer__border_2nd_menu_y, File_Explorer__border_Sidemenu_x, WindowSize_Y
+	
+	//エクスプローラー部分
+		gosub *File_Explorer__get_files
+	
+		color 0, 0, 0
+		font systemfont, 14
+	
+		repeat get_files__total_files(eID)
+			//アイコン
+				pos File_Explorer__border_Sidemenu_x+20, File_Explorer__border_2nd_menu_y+20+(cnt*32)   : gmode 2
+				if filelist_category(eID,cnt) = "Drive" {
+					gcopy 6, 0, 0, 30, 30
+				} else : if filelist_category(eID,cnt) = "Directory" {
+					gcopy 5, 0, 0, 30, 30
+				} else : if filelist_category(eID,cnt) = "File" {
+					gcopy 7, 0, 0, 30, 30
+				}
+				
+			//ファイル名・ディレクトリ名
+				pos File_Explorer__border_Sidemenu_x+60, File_Explorer__border_2nd_menu_y+20+(cnt*32)+5 : mes ""+filelist(eID,cnt)+""
+		loop
 	
 	notesel window_data
 	noteadd "1", (wID-first_wID), 1
 	
 	stop
+	
+*File_Explorer__get_files
+	notesel File_Explorer__Dir_buf
+	noteget File_Explorer__Dir, eID
+	
+	chdir File_Explorer__Dir
+	
+	filelist_buf = ""
+	
+	//パス名を覗いたファイルとディレクトリの一覧を取得
+		dirlist filelist_buf, "*.*", 0
+		get_files__total_files(eID) = stat
+		
+		repeat get_files__total_files(eID)
+			//ファイル名・ディレクトリ名
+				notesel filelist_buf
+				noteget filelist(eID,cnt), cnt
+	
+			//ファイル・ディレクトリのパス
+				filelist_with_path(eID,cnt) = ""+File_Explorer__Dir+"\\"+filelist(eID,cnt)+""
+	
+			//ファイル・ディレクトリの種類
+				filelist_category(eID,cnt) = "Directory"
+				
+				//ディレクトリ名に特殊文字"%"があった場合
+				if instr(filelist(eID,cnt), 0, "§") != -1 {
+					if instr(filelist(eID,cnt), 0, "§Drive") != -1 {
+						filelist(eID,cnt) = strmid(filelist(eID,cnt), 0, instr(filelist(eID,cnt), 0, "§Drive"))
+						filelist(eID,cnt) += "ドライブ（"+filelist(eID,cnt)+":\\）"
+						filelist_category(eID,cnt) = "Drive"
+					}
+				}
+	
+				//ファイル名に拡張子"."があった場合
+				if instr(filelist(eID,cnt), 0, ".") != -1 {
+					filelist_category(eID,cnt) = "File"
+				}
+				
+		loop
+	
+	//カレントディレクトリを元に戻す
+		chdir directory
+	
+	return
+	
+*window_minimization
+	/*ウィンドウの最小化*/
+	
+		dialog"まだ出来ません.."
+	
+		stop
 	
 *window_close
 	/*ウィンドウを消す（最小化ではない）*/
@@ -181,6 +320,9 @@
 *on_click
 	/*親ウィンドウ・子ウィンドウ問わずクリックされたときの動作*/
 	
+	//まず子ウィンドウを動かす以外の目的でクリックされていないか確認
+		gosub *clicked_on_other_than_windows
+	
 	//子ウィンドウを動かす
 		old=now
 	
@@ -196,7 +338,6 @@
 			loop
 			
 			if wID = 0 or windowmode.wID = 2 {
-				gosub *clicked_on_other_than_windows						;どの子ウィンドウも動かしていなかった場合、或いは不可動ウィンドウであった場合
 				return
 			}
 		
@@ -207,5 +348,39 @@
 	
 *clicked_on_other_than_windows
 	/*子ウィンドウを動かす以外の目的でクリックされたときの動作*/
+	
+	//エクスプローラー
+		if now="File_Explorer" {
+			//どのエクスプローラーがアクティブか確認
+				GetFocusA : Focus_hand = stat
+			
+				eID = -1
+				
+				repeat new_eID+1
+					if eID_hwnd(cnt) = Focus_hand {
+						eID = cnt
+						break
+					}
+				loop
+	
+			//フォルダ・ファイルを開く
+				if click_range(File_Explorer__border_Sidemenu_x, File_Explorer__border_2nd_menu_y, WindowSize_X, WindowSize_Y) = 1 {
+					clicked_file_number = ( ginfo_my-ginfo_wy1-(File_Explorer__border_2nd_menu_y+20) )/32
+	
+					if clicked_file_number > get_files__total_files(eID)-1 {
+						return
+					}
+	
+					if filelist_category(eID,clicked_file_number) != "Directory" and filelist_category(eID,clicked_file_number) != "Drive" {
+						return
+					}
+					
+					notesel File_Explorer__Dir_buf
+					noteadd filelist_with_path(eID, clicked_file_number), eID, 1
+					
+					goto *File_Explorer__draw
+				}
+	
+		}
 	
 	return
