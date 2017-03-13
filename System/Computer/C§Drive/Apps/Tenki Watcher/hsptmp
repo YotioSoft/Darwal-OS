@@ -1,0 +1,1768 @@
+#module
+	
+#uselib "gdi32.dll"
+	#cfunc CreatePatternBrush "CreatePatternBrush" int
+	#func DeleteObject "DeleteObject"
+	#func SetBkMode "SetBkMode" int,int 
+	#func SetBrushOrgEx "SetBrushOrgEx" int,int,int,int
+	
+#uselib "user32.dll"
+	#func GetWindowRect "GetWindowRect" int,int
+	#func MapWindowPoints "MapWindowPoints" int,int,int,int
+	
+#deffunc UpdateBackgroundBrush
+    if ginfo_sel >= length(hBrush) : hBrush.ginfo_sel = 0
+    mref bmscr,67 : hBrush.ginfo_sel = CreatePatternBrush(bmscr.7)
+    oncmd gosub *onctlcolor, $133
+	
+    return
+
+*onctlcolor
+    oldsel = ginfo_sel : gsel ginfo_intid : dim rect,4
+    setbkmode wparam, 1 // TRANSPARENT
+    getwindowrect lparam, varptr(rect)
+    mapwindowpoints 0, hwnd, varptr(rect), 2
+    setbrushorgex wparam, -rect.0, -rect.1, 0
+ 
+ 	#include "gdi32.as"
+	#define ctype RGB(%1,%2,%3) (%1 | %2 << 8 | %3 << 16)
+    settextcolor wparam, RGB (255, 255, 255)
+    
+    gsel oldsel : return hBrush.ginfo_intid
+    
+#deffunc gblur int p1, int p2		;画像をぼかす（hsp/sample/new/gblur.hsp）
+	gmode 3, ginfo_sx, ginfo_sy, 128
+	if (p2&1)=0 {
+		repeat p1
+		pos 1,0:gcopy ginfo(3)
+		pos 0,0:gcopy ginfo(3),2,0
+		if looplev>30:return
+		loop
+	}
+	if (p2&2)=0 {
+		repeat p1
+		pos 0,1:gcopy ginfo(3)
+		pos 0,0:gcopy ginfo(3),0,2
+		if looplev>30:return
+		loop
+	}
+	return
+	
+#deffunc cmes str ctext, int cx, int cy, int cx2, int cy2, int redraw_exist		;文字を中央に表示（使用例：cmes "hogehoge", 0, 640, 0, 480, 0）
+	#include "user32.as"
+	if cx2=0 : cx2=scx		;cx2が省略されている場合、画面右端の座標をcx2に代入
+	if cy2=0 : cy2=scy		;cy2が省略されている場合、画面下端の座標をcy2に代入
+	RECT = cx, cy, cx2, cy2
+	DrawText hdc, ctext, -1, varptr(RECT), $01
+	
+	if redraw_exist = 0 : redraw 1
+	return
+
+#deffunc boxfa int ax, int ay, int bx, int by				;半透明色表示命令
+	pdx = ax, bx, bx, ax
+	pdy = ay, ay, by, by
+	gsquare -1,pdx, pdy
+	return
+	
+#defcfunc click_range int mx, int my, int mx2, int my2						;指定された範囲内にマウスがあるか確認する関数
+	if mx <= mousex and mx2 >= mousex and my <= mousey and my2 >= mousey {
+		return 1
+	}else{
+		return 0
+	}
+	
+#global
+	
+	;config.dat読み込み
+	notesel config
+	noteload "data/config.dat"
+	noteget home, 1		;現在地
+	
+	;登録された地点の読み込み
+	repeat notemax - 3
+		notesel config
+		noteget registered_city.cnt, cnt + 3
+		
+		wait 1
+	loop
+	
+	registered_cities_total = notemax - 3
+
+	;各変数・文字列を初期の状態にする
+	getmode = "q"			;データを取得するときの方式（qなら都市名直接指定、idなら都市IDで指定）
+	
+	city_id = 1864154		;都市ID
+	city_q = home			;都市名
+	
+	city_name_2 = ""
+	
+	failed_city_q = ""
+	
+	s_font="Yu Gothic UI"	;フォント
+	
+	search_word = "検索"
+	search_word_old = ""
+	
+	displayed_registered_cities = 0
+	
+	display_thing = 0
+
+	;読み込み中のアイコンをmciで表示
+	screen 0, 900, 500
+	
+	file = ""+dirinfo(0)+"\\img\\loading_1.gif"
+	mci "open \""+file+"\" alias Tenki_Watcher type mpegvideo style child parent "+hwnd+""
+	mci "put Tenki_Watcher window at 402 152 0 0"
+	mci "play Tenki_Watcher repeat"
+	
+	font s_font, 14
+	cmes "読み込み中です...", 0, 300, 900, 320
+	
+	title "Tenki Watcher"
+	
+	;バッファ
+	buffer 1 : picload"img/wallpaper/d-su.jpg"	: gblur 5 : picx.1 = ginfo(12) :picy.1 = ginfo(13)
+	buffer 2 : picload"img/wallpaper/d-c.jpg"	: gblur 5 : picx.2 = ginfo(12) :picy.2 = ginfo(13)
+	buffer 3 : picload"img/wallpaper/d_r.jpg"	: gblur 9 : picx.3 = ginfo(12) :picy.3 = ginfo(13)
+	buffer 4 : picload"img/wallpaper/d-sn.jpg"	: gblur 5 : picx.4 = ginfo(12) :picy.4 = ginfo(13)
+	buffer 5 : picload"img/wallpaper/n-su.jpg"	: gblur 5 : picx.5 = ginfo(12) :picy.5 = ginfo(13)
+	buffer 6 : picload"img/wallpaper/n-c.jpg"	: gblur 5 : picx.6 = ginfo(12) :picy.6 = ginfo(13)
+	buffer 7 : picload"img/wallpaper/n-r.jpg"	: gblur 5 : picx.7 = ginfo(12) :picy.7 = ginfo(13)
+	buffer 8 : picload"img/wallpaper/n-sn.jpg"	: gblur 5 : picx.8 = ginfo(12) :picy.8 = ginfo(13)
+	
+	;buffer 9は天気を取得するときにバッファ
+	
+	celload "img/windsock.png", 10
+	
+	;天気アイコン（日中、48x48縮小版）
+	celload "img/icon/01d_mini.png", 11
+	celload "img/icon/02d_mini.png", 12
+	celload "img/icon/03d_mini.png", 13
+	celload "img/icon/04d_mini.png", 14
+	celload "img/icon/09d_mini.png", 15
+	celload "img/icon/10d_mini.png", 16
+	celload "img/icon/11d_mini.png", 17
+	celload "img/icon/13d_mini.png", 18
+	
+	;天気アイコン（夜、48x48縮小版）
+	celload "img/icon/01n_mini.png", 19
+	celload "img/icon/02n_mini.png", 20
+	celload "img/icon/03n_mini.png", 21
+	celload "img/icon/04n_mini.png", 22
+	celload "img/icon/09n_mini.png", 23
+	celload "img/icon/10n_mini.png", 24
+	celload "img/icon/11n_mini.png", 25
+	celload "img/icon/13n_mini.png", 26
+	
+	;buffer 27は週間天気予報を表示するときにバッファ（*display）
+	
+	celload "img/icon/search.png", 28
+	celload "img/icon/home.png", 29
+	celload "img/icon/plus.png", 30
+	celload "img/icon/points.png", 34
+	
+	gsel 0
+	
+	onerror *get_error
+
+#include "hspinet.as"
+	
+*get_now_weather
+	onerror 0
+	checked_city_name = 0
+	ci = 0
+	
+	if from_city_search = 1 {
+	
+		from_city_search = 0
+	
+		city_name = ""
+		city_q = ""
+		city_name_2 = ""
+	
+	;地名の日本名がcities.txtにあった場合、日本語の地名に変換
+	
+	notesel cities
+	noteload "data/cities.txt"
+	
+	;同じ市内にまたは都道府県内に同じ地名が2つ以上ある場合（市町村名）
+	if instr( search_word_old , 0, "市" ) ! -1 or instr( search_word_old , 0, "区" ) ! -1 or instr( search_word_old , 0, "町" ) ! -1 or instr( search_word_old , 0, "村" ) ! -1 {
+	
+		prefecture = ""			;都道府県（州）
+		municipality = ""		;市町村
+		municipality_ward = ""	;区
+
+		if instr ( search_word_old, 0, "都" ) ! -1 {
+			prefecture = strmid( search_word_old, 0, instr( search_word_old, 0, "都" ) + 2 )
+		}
+		if instr ( search_word_old, 0, "道" ) ! -1 {
+			prefecture = strmid( search_word_old, 0, instr( search_word_old, 0, "道" ) + 2 )
+		}
+		if instr ( search_word_old, 0, "府" ) ! -1 {
+			prefecture = strmid( search_word_old, 0, instr( search_word_old, 0, "府" ) + 2 )
+		}
+		if instr ( search_word_old, 0, "県" ) ! -1 {
+			prefecture = strmid( search_word_old, 0, instr( search_word_old, 0, "県" ) + 2 )
+		}
+	
+		if instr ( search_word_old, 0, "州" ) ! -1 {
+			prefecture = strmid( search_word_old, 0, instr( search_word_old, 0, "州" ) + 2 )
+		}
+	
+		if prefecture ! "" {
+			
+			if instr ( search_word_old, 0, "市" ) ! -1 {
+				municipality = strmid ( search_word_old, strlen( prefecture ), instr( search_word_old, 0, "市" ) - strlen( prefecture ) + 2 )
+			}
+			if instr ( search_word_old, 0, "町" ) ! -1 {
+				municipality = strmid ( search_word_old, strlen( prefecture ), instr( search_word_old, 0, "町" ) - strlen( prefecture ) + 2 )
+			}
+			if instr ( search_word_old, 0, "村" ) ! -1 {
+				municipality = strmid ( search_word_old, strlen( prefecture ), instr( search_word_old, 0, "村" ) - strlen( prefecture ) + 2 )
+			}
+			
+			if instr ( search_word_old, 0, "区" ) ! -1 {
+				if instr( search_word_old, 0, "市" ) ! -1 {
+					municipality_ward = strmid ( search_word_old, strlen( prefecture ) + strlen( municipality ), instr( search_word_old, 0, "区" ) + 2 )
+				}else{
+					municipality_ward = strmid ( search_word_old, strlen( prefecture ), instr( search_word_old, 0, "区" ) + 2 )
+				}
+			}
+			
+		}else{
+		
+			if instr ( search_word_old, 0, "市" ) ! -1 {
+				municipality = strmid ( search_word_old, 0, instr( search_word_old, 0, "市" ) + 2 )
+			}
+			if instr ( search_word_old, 0, "町" ) ! -1 {
+				municipality = strmid ( search_word_old, 0, instr( search_word_old, 0, "町" ) + 2 )
+			}
+			if instr ( search_word_old, 0, "村" ) ! -1 {
+				municipality = strmid ( search_word_old, 0, instr( search_word_old, 0, "村" ) + 2 )
+			}
+			
+			if instr ( search_word_old, 0, "区" ) ! -1 {
+				if instr( search_word_old, 0, "市" ) ! -1 {
+					municipality_ward = strmid ( search_word_old, strlen( municipality ), instr( search_word_old, 0, "区" ) + 2 )
+				}else{
+					municipality_ward = strmid ( search_word_old, 0, instr( search_word_old, 0, "区" ) + 2 )
+				}
+			}
+						
+		}
+		
+	}
+	
+		notesel cities
+		cities_total = notemax
+			
+		sdim searched_city_name, cities_total
+		sdim searched_city_name_2, cities_total
+	
+		ci = 0
+	
+		repeat cities_total
+			
+			notesel cities
+			noteget cities_line, cnt
+			
+			split cities_line, ", ", searched_city_name.cnt, not_use, searched_city_name_2.cnt
+			
+			;検索された地名と出てきた地名が一致するか確認（地点名）
+			if instr( searched_city_name.cnt, 0, search_word_old ) ! -1 and instr( cities_line, 0, "[" ) = -1 {
+				split cities_line, ", ", ci_city_name.ci, ci_city_q.ci, ci_city_name_2.ci
+				ci++
+			}
+	
+			;検索された地名と出てきた地名が一致するか確認（都道府県名または市区町村名）
+			if instr( searched_city_name_2.cnt, 0, search_word_old ) ! -1 {
+				split cities_line, ", ", ci_city_name.ci, ci_city_q.ci, ci_city_name_2.ci
+				ci++
+			}
+	
+			if municipality ! "" or municipality_ward ! "" {
+				;検索された地名と出てきた地名が一致するか確認（区名で検索され、かつ何処の市区か判定できる場合）
+				if instr( searched_city_name_2.cnt, 0, municipality ) ! -1 and instr( searched_city_name_2.cnt, 0, municipality_ward ) ! -1 {
+					split cities_line, ", ", ci_city_name.ci, ci_city_q.ci, ci_city_name_2.ci
+					ci++
+				;検索された地名と出てきた地名が一致するか確認（市町村名で検索され、かつ何処の市町村か判定できる場合）
+				} else : if munidipality ! "" {
+					if instr( searched_city_name_2.cnt, 0, municipality ) ! -1 {
+					split cities_line, ", ", ci_city_name.ci, ci_city_q.ci, ci_city_name_2.ci
+					ci++
+				}
+				}
+			}
+		
+			await 1
+		loop
+		
+		checked_city_name = 1
+		
+		;日本語訳が復数見つかった場合
+		if ci >= 2 {
+			
+			sdim searched_city_name_3, ci
+	
+			if instr( search_word_old, 0, "市" ) ! -1 or instr( search_word_old, 0, "区" ) ! -1 or instr( search_word_old, 0, "町" ) ! -1 or instr( search_word_old, 0, "村" ) ! -1 {
+	
+				;市区町村名で検索された場合
+				;見つかった都市の優先順位を検出
+				repeat ci
+					priority = strmid( ci_city_name_2.cnt, instr( ci_city_name_2.cnt, 0, "#" ) + 1, 1 )
+					priority = int( priority )
+					
+					searched_city_name_3.priority = ci_city_name_2.cnt
+		
+					await 1
+				loop
+		
+				;優先順位順に検索された地名と一致するか確認
+				repeat ci
+				
+					if instr( search_word_old, 0, "区" ) ! -1 {
+						
+						if instr( searched_city_name_3.cnt, 0, municipality_ward ) ! -1 {
+							city_name_2 = searched_city_name_3.cnt
+						}
+						
+					}
+		
+					await 1
+				loop
+		
+				if city_name = ""   : city_name = ci_city_name.0
+				if city_q = ""      : city_q = ci_city_q.0
+				if city_name_2 = "" : city_name_2 = ci_city_name_2.0
+	
+			}else{
+				;市区町村名以外（地点名など）で検索された場合
+				;1文字目と最後の文字が一致するかしないかで一番的確な地点名を検索
+				repeat ci
+				;	dialog""+ci_city_name_2.cnt+""
+					if instr( ci_city_name.cnt, 0, ";" ) ! -1 {
+						
+						ci_strlen = 0
+						
+						repeat
+							sdim ci_city_name_without_semicolon, strlen( ci_city_name.cnt )
+							
+							ci_city_name_without_semicolon = strmid( ci_city_name.cnt, ci_strlen, instr( ci_city_name.cnt, ci_strlen, ";" ) )
+							ci_strlen = strlen( ci_city_name_without_semicolon )
+							
+							if ci_city_name_without_semicolon = "" : break
+							
+							if strmid( search_word_old, 0, 2 ) = strmid( ci_city_name_without_semicolon, 0, 2 ) and strmid( search_word_old, -1, 2 ) = strmid( ci_city_name_without_semicolon, -1, 2 ) {
+								city_name = ci_city_name_without_semicolon
+								city_q = ci_city_q.cnt
+								city_name_2 = ci_city_name_2.cnt
+							}
+							
+							await 1
+						loop
+						
+					}else{
+						
+						if strmid( search_word_old, 0, 2 ) = strmid( ci_city_name.cnt, 0, 2 ) and strmid( search_word_old, -1, 2 ) = strmid( ci_city_name.cnt, -1, 2 ) {
+							city_name = ci_city_name.cnt
+							city_q = ci_city_q.cnt
+							city_name_2 = ci_city_name_2.cnt
+						}
+						
+					}
+					
+					await 1
+	
+				loop
+				
+				;どれも1文字目と最後の文字が一致しなかった場合
+				if city_name = "" {
+					
+					;候補の内、★マーク（都道府県内で迷ったらこれにしとけのサイン）がある地点を探す
+					repeat ci
+						if instr( ci_city_name.cnt, 0, "★" ) ! -1 {
+							city_name = ci_city_name.cnt
+							city_q = ci_city_q.cnt
+							city_name_2 = ci_city_name_2.cnt
+						}
+	
+						await 1
+	
+					loop
+	
+					;★マークのある地点が見つからなかった場合は一番最初に出てきた候補を使用
+					if city_name = "" {
+						city_name = ci_city_name.0
+						city_q = ci_city_q.0
+						city_name_2 = ci_city_name_2.0
+					}
+	
+				}
+			
+			}
+			
+	
+		}
+	
+		;一つだけ見つかった場合
+		if ci = 1 {
+			city_name = ci_city_name.0
+			city_q = ci_city_q.0
+			city_name_2 = ci_city_name_2.0
+		}
+	
+		;結果の地名の中に地名の区切りコードが合った場合は一つ目の地名を使う
+		if instr( city_name, 0, ";" ) ! -1 {
+			city_name = strmid( city_name, 0, instr( city_name, 0, ";" ) )
+		}
+	
+		;結果の地名の中に都市名検索時に使う記号があった場合は記号を削除する
+		if instr( city_name, 0, "★" ) ! -1 {
+			city_name = strmid( city_name, 2, strlen( city_name ) )
+		}
+		if instr( city_name_2, 0, "#" ) ! -1 {
+			city_name_2 = strmid( city_name_2, 0, instr( city_name_2, 0, "#" ) )
+		}
+	
+	}
+	
+	;取得するURL
+	if getmode = "id" : geturl = "id="+city_id+""
+	if getmode = "q"  : geturl = "q="+city_q+""
+	
+	;現在の天気と気温を取得（now）
+	alloc buf,1024*1024
+
+	netinit											;	プラグインの初期化
+	
+	neturl "http://api.openweathermap.org/data/2.5/weather?"+geturl+"&mode=xml&appid=025b4afa1884c9d2df25f32bc8b2db91"
+
+	netdlname "data/"+geturl+"_now.owm"			;	ダウンロード後のファイル名
+	netrequest ""									;	ファイル名の指定（ここで指定する）
+	
+	repeat
+		netexec res
+		if res : break
+		await 50
+	loop
+
+	netterm											;	プラグインの開放
+	
+	notesel now_weather
+	noteload "data/"+geturl+"_now.owm"
+	
+	;都市名を取得
+	instr_start = instr ( now_weather, 0, "<city" )
+	instr_finish = instr ( now_weather, instr_start, ">" ) - 1
+	city_tag = strmid ( now_weather, instr_start, instr_finish )
+	
+		instr_start = instr ( city_tag, 0, " name=" ) + 7
+		instr_finish = strlen ( city_tag ) - 1
+		city_name_on_xml = strmid ( city_tag, instr_start, instr_finish )
+	
+		;地名をあらかじめ取得できてなかった場合（英語で検索された場合など）、取得した地名を使う
+		if city_name = "" : city_name = city_name_on_xml
+	
+	;文字化け解消
+	;ﾅ･（?）→o
+	if instr( city_name_on_xml, 0, "ﾅ" ) ! -1 {
+		strrep city_name_on_xml, "ﾅ", "o"
+		city_name_on_xml = strmid( city_name_on_xml, 0, strlen( city_name_on_xml ) - 1 )
+	}
+	
+	return_to_get_now_weather = 0
+	ci = 0
+	
+	;日の出を取得
+	instr_start = instr ( now_weather, 0, "<sun rise=" ) + 22
+	sun_rise = strmid ( now_weather, instr_start, 8 )
+	
+	split sun_rise, ":", sun_rise_hour, sun_rise_minute, sun_rise_second
+	
+	sun_rise_hour = int (sun_rise_hour)
+	
+	;日の出の時刻を日本時間に直す
+	sun_rise_hour += 9
+	
+	if sun_rise_hour < 0 {		;表示する時間がマイナスになった場合
+		sun_rise_hour += 24
+	}
+	if sun_rise_hour > 23 {		;表示する時間が24時以上になった場合
+		sun_rise_hour -= 24
+	}
+	
+	;日の入りを取得
+	instr_start = instr ( now_weather, 0, " set=" ) + 17
+	sun_set = strmid ( now_weather, instr_start, 8 )
+	
+	split sun_set, ":", sun_set_hour, sun_set_minute, sun_set_second
+	
+	sun_set_hour = int (sun_set_hour)
+	
+	;日の入りの時刻を日本時間に直す
+	sun_set_hour += 9
+	
+	if sun_set_hour < 0 {		;表示する時間がマイナスになった場合
+		sun_set_hour += 24
+	}
+	if sun_set_hour > 23 {		;表示する時間が24時以上になった場合
+		sun_set_hour -= 24
+	}
+	
+	;現在の気温を取得
+	instr_start = instr ( now_weather, 0, "<temperature" )
+	instr_finish = strlen ( now_weather )
+	now_weather_temperature = strmid ( now_weather, instr_start, instr_finish )
+	
+		;日中の気温（ケルビン）
+		instr_start = instr ( now_weather_temperature, 0, "value=" ) + 7
+		instr_finish = instr ( now_weather_temperature, instr_start, " min" ) - 1
+		now_weather_temperature_value = strmid ( now_weather_temperature, instr_start, instr_finish )
+	
+		;日中の気温をケルビンから摂氏に変換
+		now_weather_temperature_value = double( now_weather_temperature_value ) - 273.15
+		now_weather_temperature_value = int( now_weather_temperature_value )
+	
+	;現在の天気の種類（晴れ、曇り、雨など）
+	instr_start = instr ( now_weather, 0, "<weather" )
+	instr_finish = strlen ( now_weather )
+	now_weather_symbol = strmid ( now_weather, instr_start, instr_finish )
+	
+		instr_start = instr ( now_weather_symbol, 0, "value=" ) + 7
+		instr_finish = instr ( now_weather_symbol, instr_start, " icon=" ) - 1
+		now_weather_symbol_name = strmid ( now_weather_symbol, instr_start, instr_finish )
+	
+		instr_start = instr ( now_weather_symbol, 0, "icon=" ) + 6
+		instr_finish = instr ( now_weather_symbol, instr_start, ">" ) - 2
+		now_weather_symbol_icon = strmid ( now_weather_symbol, instr_start, instr_finish )
+	
+	;天気アイコンID（夜間なら○○n.png、日中は○○d.png）
+	buffer 9
+		if gettime(4) >= 18 or gettime(4) <= 4 {
+			now_weather_symbol_icon = ""+now_weather_symbol_icon+"n"
+		}else{
+			now_weather_symbol_icon = ""+now_weather_symbol_icon+"d"
+		}
+	
+		picload "img/icon/"+now_weather_symbol_icon+".png"
+	gsel 0
+	
+	;現在の湿度を取得
+	instr_start = instr ( now_weather, 0, "<humidity" )
+	instr_finish = strlen ( now_weather )
+	now_weather_humidity = strmid ( now_weather, instr_start, instr_finish )
+	
+		instr_start = instr ( now_weather_humidity, 0, "value=" ) + 7
+		instr_finish = instr ( now_weather_humidity, instr_start, " unit" ) - 1
+		now_weather_humidity_value = strmid ( now_weather_humidity, instr_start, instr_finish )
+		
+		now_weather_humidity_value = int( now_weather_humidity_value )
+		
+	;取得した天気の名前を日本語に変換
+	weather_symbol_name = now_weather_symbol_name
+	gosub*change_symbol_name
+	
+	now_weather_symbol_group = weather_symbol_group
+	now_weather_symbol_name_jp = weather_symbol_name_jp
+	now_weather_wallpaper = wallpaper
+	
+*get_forecast5
+	;5日間の3時間ごとの天気を取得（forecast5）
+	alloc buf,1024*1024
+
+	netinit											;	プラグインの初期化
+
+	neturl "http://api.openweathermap.org/data/2.5/forecast?"+geturl+"&mode=xml&appid=025b4afa1884c9d2df25f32bc8b2db91"
+
+	netdlname "data/"+geturl+"_forecast5.owm"		;	ダウンロード後のファイル名
+	netrequest ""									;	ファイル名の指定（ここで指定する）
+	
+	repeat
+		netexec res
+		if res : break
+		await 50
+	loop
+
+	netterm											;	プラグインの開放
+	
+	notesel forecast5_weather
+	noteload "data/"+geturl+"_forecast5.owm"
+	
+	;3時間ずつ天気と気温を取得
+	
+	instr_start = instr ( forecast5_weather, next_search_byte, "<forecast>" )
+	instr_finish = instr ( forecast5_weather, next_search_byte, "</forecast>" )
+	forecast5_weather_forecast = strmid ( forecast5_weather, instr_start, instr_finish )
+	
+	next_search_byte = 0
+	
+	repeat 8	;メモ : 全部で36個（2016/09/24　18時26分）
+	
+		if cnt >= 1 : get_hour *= 2
+	
+		instr_start  = instr ( forecast5_weather_forecast, next_search_byte, "<time " ) + next_search_byte
+		instr_finish = instr ( forecast5_weather_forecast, instr_start, "</time>" )
+		forecast5_weather_time.cnt = strmid ( forecast5_weather_forecast, instr_start, instr_finish )
+		
+		next_search_byte += strlen( forecast5_weather_time.cnt )		;次に読み込んだときに取得を始める位置
+	
+		;取得した天気の時刻を取得
+		instr_start = instr ( forecast5_weather_time.cnt, 0, "<time from=" ) + 23
+		forecast5_weather_time_from.cnt = strmid ( forecast5_weather_time.cnt, instr_start, 2 )
+		forecast5_weather_time_from_int.cnt = int( forecast5_weather_time_from.cnt )
+	
+		;時刻を日本時間に直す
+		forecast5_weather_time_from_int.cnt += 9
+		
+		if forecast5_weather_time_from_int.cnt < 0 {		;表示する時間がマイナスになった場合
+				forecast5_weather_time_from_int.cnt += 24
+		}
+		if forecast5_weather_time_from_int.cnt > 23 {		;表示する時間が24時以上になった場合
+				forecast5_weather_time_from_int.cnt -= 24
+		}
+		
+		;3時間ごとの天気を取得
+		instr_start = instr ( forecast5_weather_time.cnt, 0, "<symbol" )
+		instr_finish = strlen ( forecast5_weather_time.cnt )
+		forecast5_weather_symbol.cnt = strmid ( forecast5_weather_time.cnt, instr_start, instr_finish )
+		
+			instr_start = instr ( forecast5_weather_symbol.cnt, 0, "name=" ) + 6
+			instr_finish = instr ( forecast5_weather_symbol.cnt, instr_start, " var" ) - 1
+			forecast5_weather_symbol_name.cnt = strmid ( forecast5_weather_symbol.cnt, instr_start, instr_finish )
+	
+			;取得した天気の名前を日本語に変換
+			weather_symbol_name = forecast5_weather_symbol_name.cnt
+			gosub*change_symbol_name
+			
+			forecast5_weather_symbol_group.cnt = weather_symbol_group
+			forecast5_weather_symbol_name_jp.cnt = weather_symbol_name_jp
+			
+			;天気のアイコンを取得
+			instr_start = instr ( forecast5_weather_symbol.cnt, 0, "var=" ) + 5
+			forecast5_weather_symbol_icon.cnt = strmid ( forecast5_weather_symbol.cnt, instr_start, 3 )
+			
+		;3時間ごとの気温を取得
+		instr_start = instr ( forecast5_weather_time.cnt, 0, "<temperature" )
+		instr_finish = strlen ( forecast5_weather_time.cnt )
+		forecast5_weather_temperature.cnt = strmid ( forecast5_weather_time.cnt, instr_start, instr_finish )
+		
+			instr_start = instr ( forecast5_weather_temperature.cnt, 0, "value=" ) + 7
+			instr_finish = instr ( forecast5_weather_temperature.cnt, instr_start, " min" ) - 1
+			forecast5_weather_temperature_var.cnt = strmid ( forecast5_weather_temperature.cnt, instr_start, instr_finish )
+			forecast5_weather_temperature_var_int.cnt = int( forecast5_weather_temperature_var.cnt )
+	
+		wait 1
+	
+	loop
+	
+*get_forecast7
+	;1週間分の天気を取得（forecast7）
+	alloc buf,1024*1024
+
+	netinit											;	プラグインの初期化
+
+	neturl "http://api.openweathermap.org/data/2.5/forecast/daily?"+geturl+"&mode=xml&units=metric&cnt=7&appid=025b4afa1884c9d2df25f32bc8b2db91"
+
+	netdlname "data/"+geturl+"_forecast7.owm"				;	ダウンロード後のファイル名
+	netrequest ""									;	ファイル名の指定（ここで指定する）
+	
+	repeat
+		netexec res
+		if res : break
+		await 50
+	loop
+
+	netterm											;	プラグインの開放
+	
+	notesel forecast7_weather
+	noteload "data/"+geturl+"_forecast7.owm"
+	
+	get_day = 0
+	next_search_byte = 0
+	
+	sdim w_daily, 7
+	
+	sdim w_daily_time_day, 7
+	sdim w_daily_time_day_year, 7
+	sdim w_daily_time_day_month, 7
+	dim  w_daily_time_day_month_int, 7
+	sdim w_daily_time_day_day, 7
+	dim  w_daily_time_day_day_int, 7
+	
+	sdim w_daily_symbol, 7
+	sdim w_daily_symbol_name, 7
+	sdim w_daily_symbol_var, 7
+	sdim w_daily_symbol_group, 7
+	dim  w_daily_symbol_icon, 7
+	sdim w_daily_symbol_name_jp, 7
+	
+	sdim w_daily_wind_direction, 7
+	sdim w_daily_wind_direction_deg, 7
+	dim  w_daily_wind_direction_deg_int, 7
+	sdim w_daily_wind_direction_code, 7
+	sdim w_daily_wind_direction_jp, 7
+	
+	sdim w_daily_wind_speed, 7
+	sdim w_daily_wind_speed_mps, 7
+	sdim w_daily_wind_speed_name, 7
+	sdim w_daily_wind_speed_name_jp, 7
+	sdim w_daily_wind_speed_name_group, 7
+	
+	sdim w_daily_temperature, 7
+	sdim w_daily_temperature_min, 7
+	dim  w_daily_temperature_min_int, 7
+	sdim w_daily_temperature_max, 7
+	dim  w_daily_temperature_max_int, 7
+	
+	repeat 7
+		
+		;天気を1日ずつ取得
+		instr_start  = instr ( forecast7_weather, next_search_byte, "<time " ) + next_search_byte
+		instr_finish = instr ( forecast7_weather, instr_start, "</time>" )
+		w_daily.get_day = strmid ( forecast7_weather, instr_start, instr_finish )
+		
+		next_search_byte += strlen( w_daily.get_day )
+	
+		;日付を取得
+		instr_start = instr ( w_daily.get_day, 0, " day=" ) + 6
+		w_daily_time_day.get_day = strmid ( w_daily.get_day, instr_start, 10 )
+	
+		split w_daily_time_day.get_day, "-", w_daily_time_day_year.get_day, w_daily_time_day_month.get_day, w_daily_time_day_day.get_day
+	
+		w_daily_time_day_month_int.get_day = int( w_daily_time_day_month.get_day )
+		w_daily_time_day_day_int.get_day = int( w_daily_time_day_day.get_day )
+		
+		;今日の天気の種類（晴れ、曇り、雨など）
+		instr_start = instr ( w_daily.get_day, 0, "<symbol" )
+		instr_finish = strlen ( w_daily.get_day )
+		w_daily_symbol.get_day = strmid ( w_daily.get_day, instr_start, instr_finish )
+		
+			instr_start = instr ( w_daily_symbol.get_day, 0, "name=" ) + 6
+			instr_finish = instr ( w_daily_symbol.get_day, instr_start, " var" ) - 1
+			w_daily_symbol_name.get_day = strmid ( w_daily_symbol.get_day, instr_start, instr_finish )
+		
+			instr_start = instr ( w_daily_symbol.get_day, 0, "var" ) + 5
+			instr_finish = instr ( w_daily_symbol.get_day, instr_start, ">" ) - 2
+			w_daily_symbol_var.get_day = strmid ( w_daily_symbol.get_day, instr_start, instr_finish )
+		
+		;取得した天気の名前を日本語に変換
+		weather_symbol_name =  w_daily_symbol_name.get_day
+		gosub*change_symbol_name
+	
+		w_daily_symbol_group.get_day = weather_symbol_group
+		w_daily_symbol_icon.get_day = wethaer_symbol_icon
+		w_daily_symbol_name_jp.get_day = weather_symbol_name_jp
+		
+		;取得できなかったら*get_errorへ
+		if w_daily_symbol_name.get_day = "" : goto*get_error
+		
+		;風向きを取得
+		instr_start = instr ( w_daily.get_day, 0, "<windDirection" )
+		instr_finish = instr ( w_daily.get_day, instr_start, ">" )
+		w_daily_wind_direction.get_day = strmid ( w_daily.get_day, instr_start, instr_finish )
+		
+			instr_start = instr ( w_daily_wind_direction.get_day, 0, "deg=" ) + 5
+			instr_finish = instr ( w_daily_wind_direction.get_day, instr_start, " code" ) - 1
+			w_daily_wind_direction_deg.get_day = strmid ( w_daily_wind_direction.get_day, instr_start, instr_finish )
+		
+			w_daily_wind_direction_deg_int.get_day = int( w_daily_wind_direction_deg.get_day )
+		
+			instr_start = instr ( w_daily_wind_direction.get_day, 0, "code=" ) + 6
+			instr_finish = instr ( w_daily_wind_direction.get_day, instr_start, " name" ) - 1
+			w_daily_wind_direction_code.get_day = strmid ( w_daily_wind_direction.get_day, instr_start, instr_finish )
+	
+			w_daily_wind_direction_jp.get_day = ""
+			
+			if w_daily_wind_direction_code.get_day = "N" 	: w_daily_wind_direction_jp.get_day = "北"
+			if w_daily_wind_direction_code.get_day = "NNE" 	: w_daily_wind_direction_jp.get_day = "北北東"
+			if w_daily_wind_direction_code.get_day = "NE" 	: w_daily_wind_direction_jp.get_day = "北東"
+			if w_daily_wind_direction_code.get_day = "ENE" 	: w_daily_wind_direction_jp.get_day = "東北東"
+			if w_daily_wind_direction_code.get_day = "E" 	: w_daily_wind_direction_jp.get_day = "東"
+			if w_daily_wind_direction_code.get_day = "ESE" 	: w_daily_wind_direction_jp.get_day = "東南東"
+			if w_daily_wind_direction_code.get_day = "SE" 	: w_daily_wind_direction_jp.get_day = "南東"
+			if w_daily_wind_direction_code.get_day = "SSE" 	: w_daily_wind_direction_jp.get_day = "南南東"
+			if w_daily_wind_direction_code.get_day = "S" 	: w_daily_wind_direction_jp.get_day = "南"
+			if w_daily_wind_direction_code.get_day = "SSW" 	: w_daily_wind_direction_jp.get_day = "南南西"
+			if w_daily_wind_direction_code.get_day = "SW" 	: w_daily_wind_direction_jp.get_day = "南西"
+			if w_daily_wind_direction_code.get_day = "WSW" 	: w_daily_wind_direction_jp.get_day = "西南西"
+			if w_daily_wind_direction_code.get_day = "W" 	: w_daily_wind_direction_jp.get_day = "西"
+			if w_daily_wind_direction_code.get_day = "WNW" 	: w_daily_wind_direction_jp.get_day = "西北西"
+			if w_daily_wind_direction_code.get_day = "NW" 	: w_daily_wind_direction_jp.get_day = "北西"
+			if w_daily_wind_direction_code.get_day = "NNW" 	: w_daily_wind_direction_jp.get_day = "北北西"
+		
+		;風速を取得
+		instr_start = instr ( w_daily.get_day, 0, "<windSpeed" )
+		instr_finish = strlen (w_daily.get_day)
+		w_daily_wind_speed.get_day = strmid ( w_daily.get_day, instr_start, instr_finish )
+		
+			instr_start = instr ( w_daily_wind_speed.get_day, 0, "mps=" ) + 5
+			instr_finish = instr ( w_daily_wind_speed.get_day, instr_start, " name" ) - 1
+			w_daily_wind_speed_mps.get_day = strmid ( w_daily_wind_speed.get_day, instr_start, instr_finish )
+			
+			instr_start = instr ( w_daily_wind_speed.get_day, 0, "name=" ) + 6
+			instr_finish = instr ( w_daily_wind_speed.get_day, instr_start, ">" ) - 1
+			w_daily_wind_speed_name.get_day = strmid ( w_daily_wind_speed.get_day, instr_start, instr_finish )
+			
+			w_daily_wind_speed_name_group.get_day = ""
+			w_daily_wind_speed_name_jp.get_day = ""
+			
+			if w_daily_wind_speed_name.get_day = "Calm" 					: w_daily_wind_speed_name_group.get_day = "無風" 		:  w_daily_wind_speed_name_jp.get_day = "風力0"
+			if w_daily_wind_speed_name.get_day = "Light breeze" 			: w_daily_wind_speed_name_group.get_day = "軽風" 		:  w_daily_wind_speed_name_jp.get_day = "風力2"
+			if w_daily_wind_speed_name.get_day = "Gentle breeze" 			: w_daily_wind_speed_name_group.get_day = "軽風" 		:  w_daily_wind_speed_name_jp.get_day = "風力3"
+			if w_daily_wind_speed_name.get_day = "Moderate breeze" 			: w_daily_wind_speed_name_group.get_day = "和風" 		:  w_daily_wind_speed_name_jp.get_day = "風力4"
+			if w_daily_wind_speed_name.get_day = "Fresh breeze" 			: w_daily_wind_speed_name_group.get_day = "疾風" 		:  w_daily_wind_speed_name_jp.get_day = "風力5"
+			if w_daily_wind_speed_name.get_day = "Strong breeze" 			: w_daily_wind_speed_name_group.get_day = "雄風" 		:  w_daily_wind_speed_name_jp.get_day = "風力6"
+			if w_daily_wind_speed_name.get_day = "High wind, near gale" 	: w_daily_wind_speed_name_group.get_day = "雄風" 		:  w_daily_wind_speed_name_jp.get_day = "風力7"
+			if w_daily_wind_speed_name.get_day = "Gale" 					: w_daily_wind_speed_name_group.get_day = "大嵐" 		:  w_daily_wind_speed_name_jp.get_day = "風力8"
+			if w_daily_wind_speed_name.get_day = "Severe gale" 				: w_daily_wind_speed_name_group.get_day = "猛烈な風" 	:  w_daily_wind_speed_name_jp.get_day = "風力9～10"
+			if w_daily_wind_speed_name.get_day = "Storm" 					: w_daily_wind_speed_name_group.get_day = "暴風" 		:  w_daily_wind_speed_name_jp.get_day = "風力11"
+			if w_daily_wind_speed_name.get_day = "Violent storm" 			: w_daily_wind_speed_name_group.get_day = "激しい嵐" 	:  w_daily_wind_speed_name_jp.get_day = "風力11"
+			if w_daily_wind_speed_name.get_day = "Hurricane" 				: w_daily_wind_speed_name_group.get_day = "ハリケーン" 	:  w_daily_wind_speed_name_jp.get_day = "風力12"
+		
+		;気温を取得
+		instr_start = instr ( w_daily.get_day, 0, "<temperature" )
+		instr_finish = strlen (w_daily.get_day)
+		w_daily_temperature.get_day = strmid ( w_daily.get_day, instr_start, instr_finish )
+		
+			;最低気温
+			instr_start = instr ( w_daily_temperature.get_day, 0, "min=" ) + 5
+			instr_finish = instr ( w_daily_temperature.get_day, instr_start, " max" ) - 1
+			w_daily_temperature_min.get_day = strmid ( w_daily_temperature.get_day, instr_start, instr_finish )
+			w_daily_temperature_min_int.get_day = int (w_daily_temperature_min.get_day)
+		
+			;最高気温
+			instr_start = instr ( w_daily_temperature.get_day, 0, "max=" ) + 5
+			instr_finish = instr ( w_daily_temperature.get_day, instr_start, "/" ) - 1
+			w_daily_temperature_max.get_day = strmid ( w_daily_temperature.get_day, instr_start, instr_finish )
+			w_daily_temperature_max_int.get_day = int (w_daily_temperature_max.get_day)
+			
+		get_day ++
+	
+		wait 1
+	
+	loop
+	
+	;背景画像は日の出・日の入りの時刻により背景の画像が変わる
+	if gettime(4) >= sun_set_hour or gettime(4) < sun_rise_hour {
+		now_weather_wallpaper += 4
+	}
+	
+//ここから画面に表示
+*display
+	redraw 0
+	
+	onclick gosub *click_on_display
+	
+	;背景画像を表示
+	pos 0, 0 : gzoom 900, 500, now_weather_wallpaper, 0, 0, picx(now_weather_wallpaper), picy(now_weather_wallpaper)
+	
+	;現在の気温
+	color 255, 255, 255
+	
+	if city_name_2 = "" {
+		font s_font, 90
+		cmes ""+now_weather_temperature_value+"°", 220, 60, 500, 160, 1
+	}else{
+		font s_font, 75
+		cmes ""+now_weather_temperature_value+"°", 220, 62, 500, 160, 1
+	}
+	
+	line 440, 90, 440, 180
+	
+	;地点の名前
+	color 255, 255, 255
+	if city_name_2 = "" {
+		font s_font, 20
+		cmes city_name, 220, 160, 500, 200, 1
+	}else{
+		font s_font, 16
+		cmes city_name, 220, 147, 500, 170, 1
+	}
+	
+	;市町村名
+	if city_name_2 ! "" {
+		font s_font, 11 : color 255, 255, 255
+		cmes city_name_2, 220, 170, 500, 200, 1
+	}
+	
+	;天気アイコンを表示
+	pos 460, 90 : gmode 2
+	gcopy 9, 0, 0, 96, 96
+	
+	;天気の内容を表示
+	if now_weather_symbol_name_jp = "" {
+		font s_font, 26 : color 255, 255, 255
+		pos 580, 115 : mes now_weather_symbol_group
+	}else{
+		font s_font, 26 : color 255, 255, 255
+		pos 580, 100 : mes now_weather_symbol_group
+	}
+	
+	font s_font, 14 : color 255, 255, 255
+	pos 580, 140 : mes now_weather_symbol_name_jp
+	
+	;日付を表示
+	if gettime(2) = 0 : week = "日"
+	if gettime(2) = 1 : week = "月"
+	if gettime(2) = 2 : week = "火"
+	if gettime(2) = 3 : week = "水"
+	if gettime(2) = 4 : week = "木"
+	if gettime(2) = 5 : week = "金"
+	if gettime(2) = 6 : week = "土"
+	font s_font, 14 : color 255, 255, 255
+	cmes ""+gettime(0)+"年"+gettime(1)+"月"+gettime(3)+"日（"+week+"）", 0, 190, 900, 210, 1
+	
+	;最高気温・最低気温表示
+	font s_font, 14 : color 255, 255, 255
+	cmes "最高気温 "+w_daily_temperature_max_int.0+"°/ 最低気温 "+w_daily_temperature_min_int.0+"°", 0, 210, 900, 230, 1
+	
+	if display_thing = 0 {
+	
+	;3時間ごとの気温を折れ線グラフで表示
+	;まず、7つの気温のうち最高気温と最低気温を抽出する
+	dim temperatures, 7
+	
+	temperatures = forecast5_weather_temperature_var_int.0, forecast5_weather_temperature_var_int.1, forecast5_weather_temperature_var_int.2, forecast5_weather_temperature_var_int.3, forecast5_weather_temperature_var_int.4, forecast5_weather_temperature_var_int.5, forecast5_weather_temperature_var_int.6, forecast5_weather_temperature_var_int.7
+	
+	temperature_max = temperatures(0)    ;初期値
+	temperature_min = temperatures(0)
+	
+	foreach temperatures
+		if temperature_max < temperatures(cnt) : temperature_max = temperatures(cnt)
+		if temperature_min > temperatures(cnt) : temperature_min = temperatures(cnt)
+	loop
+	
+	;最高気温と最低気温の差
+	temperature_substruction = temperature_max - temperature_min
+	
+	;平均値がマイナスならプラスにする
+	if temperature_substruction < 0 : temperature_substruction *= -1
+	
+	;最高値と最低値の差がちょうど50pxになるようにする
+	repeat 8
+		forecast5_weather_temperature_pos.cnt = 50 * ( forecast5_weather_temperature_var_int.cnt - temperature_min ) / temperature_substruction * -1 + 335
+		await 1
+	loop
+		
+	repeat 8
+		if cnt <= 6 {
+			color 0, 162, 232
+			line 160 + ( cnt*80 ), forecast5_weather_temperature_pos.cnt, 160 + ( (cnt+1)*80 ), forecast5_weather_temperature_pos.(cnt+1)
+		}
+	
+		;時刻
+		font s_font, 10 : color 255, 255, 255
+		cmes ""+forecast5_weather_time_from_int.cnt+":00", 160 + ( cnt*80 ) - 10, 345, 160 + ( cnt*80 ) + 15, 360, 1
+		
+		;天気アイコン（縮小版）を表示
+		if forecast5_weather_symbol_icon.cnt = "01d" {
+			pos 160 + ( cnt*80 ) - 20, 355
+			gmode 2 : gcopy 11, 0, 0, 48, 48
+		}
+		if forecast5_weather_symbol_icon.cnt = "02d" {
+			pos 160 + ( cnt*80 ) - 20, 355
+			gmode 2 : gcopy 12, 0, 0, 48, 48
+		}
+		if forecast5_weather_symbol_icon.cnt = "03d" {
+			pos 160 + ( cnt*80 ) - 20, 355
+			gmode 2 : gcopy 13, 0, 0, 48, 48
+		}
+		if forecast5_weather_symbol_icon.cnt = "04d" {
+			pos 160 + ( cnt*80 ) - 20, 355
+			gmode 2 : gcopy 14, 0, 0, 48, 48
+		}
+		if forecast5_weather_symbol_icon.cnt = "09d" {
+			pos 160 + ( cnt*80 ) - 20, 355
+			gmode 2 : gcopy 15, 0, 0, 48, 48
+		}
+		if forecast5_weather_symbol_icon.cnt = "10d" {
+			pos 160 + ( cnt*80 ) - 20, 355
+			gmode 2 : gcopy 16, 0, 0, 48, 48
+		}
+		if forecast5_weather_symbol_icon.cnt = "11d" {
+			pos 160 + ( cnt*80 ) - 20, 355
+			gmode 2 : gcopy 17, 0, 0, 48, 48
+		}
+		if forecast5_weather_symbol_icon.cnt = "13d" {
+			pos 160 + ( cnt*80 ) - 20, 355
+			gmode 2 : gcopy 18, 0, 0, 48, 48
+		}
+	
+		if forecast5_weather_symbol_icon.cnt = "01n" {
+			pos 160 + ( cnt*80 ) - 20, 355
+			gmode 2 : gcopy 19, 0, 0, 48, 48
+		}
+		if forecast5_weather_symbol_icon.cnt = "02n" {
+			pos 160 + ( cnt*80 ) - 20, 355
+			gmode 2 : gcopy 20, 0, 0, 48, 48
+		}
+		if forecast5_weather_symbol_icon.cnt = "03n" {
+			pos 160 + ( cnt*80 ) - 20, 355
+			gmode 2 : gcopy 21, 0, 0, 48, 48
+		}
+		if forecast5_weather_symbol_icon.cnt = "04n" {
+			pos 160 + ( cnt*80 ) - 20, 355
+			gmode 2 : gcopy 22, 0, 0, 48, 48
+		}
+		if forecast5_weather_symbol_icon.cnt = "09n" {
+			pos 160 + ( cnt*80 ) - 20, 355
+			gmode 2 : gcopy 23, 0, 0, 48, 48
+		}
+		if forecast5_weather_symbol_icon.cnt = "10n" {
+			pos 160 + ( cnt*80 ) - 20, 355
+			gmode 2 : gcopy 24, 0, 0, 48, 48
+		}
+		if forecast5_weather_symbol_icon.cnt = "11n" {
+			pos 160 + ( cnt*80 ) - 20, 355
+			gmode 2 : gcopy 25, 0, 0, 48, 48
+		}
+		if forecast5_weather_symbol_icon.cnt = "13n" {
+			pos 160 + ( cnt*80 ) - 20, 355
+			gmode 2 : gcopy 26, 0, 0, 48, 48
+		}
+	
+		;気温
+		font s_font, 10 : color 255, 255, 255
+		cmes ""+forecast5_weather_temperature_var_int.cnt+"°\n"+forecast5_weather_symbol_group.cnt+"", 160 + ( cnt*80 ) - 40, 400, 160 + ( cnt*80 ) + 50, 450, 1
+		
+		await 1
+	loop
+	
+	buffer 33, 900, 500
+		gcopy 0, 900, 500
+	gsel 0
+	
+	}
+	
+	if display_thing = 1 {
+	
+	;風向・風速を表示
+	if w_daily_wind_direction_jp.0 = "0" {		;風向きが取得できないときはw_daily_wind_deg.0から風向きを測定
+		if w_daily_wind_direction_deg_int.0 >= 0 		and w_daily_wind_direction_deg_int.0 <= 11.25  : w_daily_wind_direction_jp.0 = "北"
+		if w_daily_wind_direction_deg_int.0 >= 11.25 	and w_daily_wind_direction_deg_int.0 <= 33.75  : w_daily_wind_direction_jp.0 = "北北東"
+		if w_daily_wind_direction_deg_int.0 >= 33.75 	and w_daily_wind_direction_deg_int.0 <= 56.25  : w_daily_wind_direction_jp.0 = "北東"
+		if w_daily_wind_direction_deg_int.0 >= 56.25 	and w_daily_wind_direction_deg_int.0 <= 78.75  : w_daily_wind_direction_jp.0 = "東北東"
+		if w_daily_wind_direction_deg_int.0 >= 78.75 	and w_daily_wind_direction_deg_int.0 <= 101.25 : w_daily_wind_direction_jp.0 = "東"
+		if w_daily_wind_direction_deg_int.0 >= 101.25	and w_daily_wind_direction_deg_int.0 <= 123.75 : w_daily_wind_direction_jp.0 = "東南東"
+		if w_daily_wind_direction_deg_int.0 >= 123.75	and w_daily_wind_direction_deg_int.0 <= 146.25 : w_daily_wind_direction_jp.0 = "南東"
+		if w_daily_wind_direction_deg_int.0 >= 146.25	and w_daily_wind_direction_deg_int.0 <= 168.75 : w_daily_wind_direction_jp.0 = "南南東"
+		if w_daily_wind_direction_deg_int.0 >= 168.75	and w_daily_wind_direction_deg_int.0 <= 191.25 : w_daily_wind_direction_jp.0 = "南"
+		if w_daily_wind_direction_deg_int.0 >= 191.25	and w_daily_wind_direction_deg_int.0 <= 213.75 : w_daily_wind_direction_jp.0 = "南南西"
+		if w_daily_wind_direction_deg_int.0 >= 213.75	and w_daily_wind_direction_deg_int.0 <= 236.25 : w_daily_wind_direction_jp.0 = "南西"
+		if w_daily_wind_direction_deg_int.0 >= 236.25	and w_daily_wind_direction_deg_int.0 <= 258.75 : w_daily_wind_direction_jp.0 = "西南西"
+		if w_daily_wind_direction_deg_int.0 >= 258.75	and w_daily_wind_direction_deg_int.0 <= 281.25 : w_daily_wind_direction_jp.0 = "西"
+		if w_daily_wind_direction_deg_int.0 >= 281.25	and w_daily_wind_direction_deg_int.0 <= 303.75 : w_daily_wind_direction_jp.0 = "西北西"
+		if w_daily_wind_direction_deg_int.0 >= 303.75	and w_daily_wind_direction_deg_int.0 <= 326.25 : w_daily_wind_direction_jp.0 = "北西"
+		if w_daily_wind_direction_deg_int.0 >= 326.25	and w_daily_wind_direction_deg_int.0 <= 348.75 : w_daily_wind_direction_jp.0 = "北北西"
+		if w_daily_wind_direction_deg_int.0 >= 348.75	and w_daily_wind_direction_deg_int.0 <= 359    : w_daily_wind_direction_jp.0 = "北"
+	}
+	
+	font s_font, 16 : color 255, 255, 255
+	pos 240, 280 : mes "風向き・風速"
+	
+	pos 290, 360 : gmode 2, 240, 240 : grotate 10, 0, 0, deg2rad( w_daily_wind_direction_deg_int.0 ), 128, 128
+	
+	font s_font, 14 : color 255, 255, 255
+	pos 350, 310 : mes "風向き"
+	font s_font, 18 : color 255, 255, 255
+	pos 405, 307 : mes ""+w_daily_wind_direction_jp.0+""
+	
+	font s_font, 14 : color 255, 255, 255
+	pos 350, 350 : mes "風速"
+	font s_font, 18 : color 255, 255, 255
+	pos 405, 347 : mes ""+w_daily_wind_speed_mps.0+"mps"
+	
+	if w_daily_wind_speed_name_group.0 ! "" and w_daily_wind_speed_name_jp.0 ! "" {
+		font s_font, 14 : color 255, 255, 255
+		pos 350, 390 : mes "風の強さ"
+		font s_font, 18 : color 255, 255, 255
+		pos 405, 387 : mes ""+w_daily_wind_speed_name_group.0+"（"+w_daily_wind_speed_name_jp.0+"）"
+	}
+	
+	;湿度を表示
+	font s_font, 16 : color 255, 255, 255
+	pos 550, 280 : mes "湿度"
+	
+	color 255, 255, 255  	: boxf 569, 310, 571, 343
+	color 0, 162, 232  		: boxf 569, ( 343 - (now_weather_humidity_value / 3) ), 571, 343
+	
+	font s_font, 36 : color 255, 255, 255
+	pos 590, 300 : mes ""+now_weather_humidity_value+"％"
+	
+	;日の出・日の入りを表示
+	font s_font, 16 : color 255, 255, 255
+	pos 550, 360 : mes "日の出・日の入り"
+	
+	font s_font, 12 : color 255, 255, 255
+	pos 560, 387 : mes "日の出"
+		font s_font, 16 : color 255, 255, 255
+		pos 615, 383 : mes ""+sun_rise_hour+":"+sun_rise_minute+""
+	
+	font s_font, 12 : color 255, 255, 255
+	pos 560, 410 : mes "日の入り"
+		font s_font, 16 : color 255, 255, 255
+		pos 615, 416 : mes ""+sun_set_hour+":"+sun_set_minute+""
+	
+	buffer 33, 900, 500
+		gcopy 0, 900, 500
+	gsel 0
+	
+	}
+	
+	if display_thing = 2 {
+	
+	;週間天気予報を表示
+	font s_font, 16 : color 255, 255, 255
+	pos 90, 280 : mes "週間天気予報"
+	onerror 0
+	;1日目の天気の日付が今日になっているか確認
+	;日付が昨日のままになっている場合は今日から5日分の天気を表示
+	if w_daily_time_day_day_int.0 ! gettime(3) {
+		off_by_one_day = 1
+	}else{
+		off_by_one_day = 0
+	}
+	
+	;曜日
+	week = gettime(2)
+	
+	repeat 7 - off_by_one_day
+	
+		buffer 27
+			picload "img/icon/"+w_daily_symbol_var(cnt + off_by_one_day)+"d_mini.png"
+		gsel 0
+	
+		;曜日の計算
+		if week >= 7 : week = 0
+		
+		if week = 0 : week_jp = "日"
+		if week = 1 : week_jp = "月"
+		if week = 2 : week_jp = "火"
+		if week = 3 : week_jp = "水"
+		if week = 4 : week_jp = "木"
+		if week = 5 : week_jp = "金"
+		if week = 6 : week_jp = "土"
+	
+		week++
+	
+		;日付
+		font s_font, 12 : color 255, 255, 255
+		cmes ""+w_daily_time_day_month_int(cnt + off_by_one_day)+"/"+w_daily_time_day_day_int(cnt + off_by_one_day)+" "+week_jp+"", 100 + (cnt*100), 310, 100 + (cnt*100) + 50, 330, 1
+	
+		;天気アイコン
+		pos 100 + (cnt*100) + 1, 320
+		gmode 2 : gcopy 27, 0, 0, 48, 48
+	
+		;天気
+		font s_font, 12 : color 255, 255, 255
+		cmes ""+w_daily_symbol_group(cnt + off_by_one_day)+"", 100 + (cnt*100) - 10, 365, 100 + (cnt*100) + 60, 385, 1
+	
+		;気温
+		;最高気温
+		font s_font, 12 : color 255, 0, 0
+		cmes ""+w_daily_temperature_max_int(cnt + off_by_one_day)+"°", 100 + (cnt*100) - 10, 380, 100 + (cnt*100) + 60 - ( 5 * strlen( ""+w_daily_temperature_min_int(cnt + off_by_one_day)+"°" ) ) - 1, 400, 1
+		;最高気温と最低気温の間のスラッシュ
+		font s_font, 12 : color 255, 255, 255
+		cmes "/", 100 + (cnt*100) - 10, 380, 100 + (cnt*100) + 60, 400, 1
+		;最低気温
+		font s_font, 12 : color 0, 162, 232
+		cmes ""+w_daily_temperature_min_int(cnt + off_by_one_day)+"°", 100 + (cnt*100) - 10 + ( 5 * strlen( ""+w_daily_temperature_max_int(cnt + off_by_one_day)+"°" ) ) + 1, 380, 100 + (cnt*100) + 60, 400, 1
+	
+		;風向き・風向
+		font s_font, 12 : color 255, 255, 255
+		cmes ""+w_daily_wind_direction_jp(cnt + off_by_one_day)+"\n"+w_daily_wind_speed_mps(cnt + off_by_one_day)+"mps", 100 + (cnt*100) - 10, 410, 100 + (cnt*100) + 60, 450, 1
+		
+		await 1
+	
+	loop
+	
+	}
+	
+	;redrawする前に読み込み中のgifを削除
+	mci "close Tenki_Watcher"
+	
+	redraw 1
+	
+	;地点一覧ボタン
+	pos 630, 0 : gmode 2 : gcopy 34, 0, 0, 20, 20
+	
+	;現在地登録ボタン
+	pos 650, 0 : gmode 2 : gcopy 29, 0, 0, 20, 20
+	
+	;地点登録ボタン
+	pos 670, 0 : gmode 2 : gcopy 30, 0, 0, 20, 20
+	
+	;都市検索ボックス
+	color 0, 0, 0 : gmode 4,,,120
+	boxfa 710, 0, 860, 20
+	
+	if strlen( search_word_old ) ! 0 {
+		search_word = search_word_old
+	}
+	
+	UpdateBackgroundBrush
+	
+	font s_font, 12 : objmode 2
+	
+	objsize 150, 20
+	pos 710, 2 : input search_word
+	
+	hInput = objinfo(stat, 2)
+	GetWindowLong hInput, -20
+	SetWindowLong hInput, -20,stat & $FFFFFDFF
+	SetWindowPos hInput, 0, 0, 0, 0, 0, $0027
+	
+	objmode 0
+	
+	objsize 40, 20 : objimage 28
+	pos 860, 0 : button "",*city_search
+	
+	;画面をキャプチャ
+	buffer 31, 900, 500
+		pos 0, 0 : gmode 0
+		gcopy 0, 0, 0, 900, 500
+	gsel 0
+	
+	stop
+
+*click_on_display
+	;地点一覧ボタンが押されたとき
+	if click_range( 630, 0, 650, 20 ) = 1 {
+		gosub *points
+	}
+	
+	;ホームボタンが押されたとき
+	if click_range( 650, 0, 670, 20 ) = 1 {
+		gosub *registration_home
+	}
+	
+	;登録地点メニューが押されたとき
+	if click_range( 670, 0, 690, 20 ) = 1 {
+		if displayed_registered_cities = 0 {
+			displayed_registered_cities = 1
+			
+			goto *display_registered_cites
+		}else{
+			displayed_registered_cities = 0
+			
+			pos 0, 0 : gmode 0 : gcopy 31, 0, 0, 900, 500
+		}
+	}
+	
+	;ウィンドウ下半分が押されたとき
+	if click_range( 0, 250, 900, 500) = 1 {
+		display_thing ++
+	
+		if display_thing > 2 {
+			display_thing = 0
+		}
+	
+		goto*display
+	}
+	
+	return
+
+*points				;地点一覧
+	clrobj
+	
+	onclick gosub *click_on_points
+	
+	color 230, 230, 230 : boxf
+	
+	points_status = "select_country"
+	
+	color 237, 28, 36 : boxf 200, 50, 400, 100
+		color 255, 255, 255
+		font s_font, 24 : cmes "日本", 200, 60, 400, 100
+	
+	stop
+
+*points_japan
+	color 230, 230, 230 : boxf
+	
+	onclick gosub *click_on_points
+	
+	points_status = "select_administrative_division"
+	
+	notesel administrative_divisions
+	noteload "data/administrative_divisions.txt"
+	
+	;その国の地方区分がいくつあるのか取得
+	repeat notemax
+		notesel administrative_divisions
+		noteget administrative_divisions_buf, cnt
+	
+		if instr( administrative_divisions_buf, 0, "日本" ) ! -1 {
+			country_start_line = cnt + 1
+			
+			split administrative_divisions_buf, ", ", not_use, administrative_divisions_in_the_country
+			administrative_divisions_in_the_country = int(administrative_divisions_in_the_country)
+	
+			repeat administrative_divisions_in_the_country
+				notesel administrative_divisions
+				noteget an_administrative_division.cnt, (cnt+country_start_line)
+				await 1
+			loop
+		}
+		await 1
+	loop
+	
+	points_japan_x = 25
+	points_japan_y = 150
+				
+	repeat administrative_divisions_in_the_country
+		;各ボタンの間 x:20px, y:5px / 余白 x,yとも20px
+	
+		if cnt >= 0 and cnt <= 3 {
+			color 34, 177, 76
+		}
+		if cnt >= 4 and cnt <= 9 {
+			color 181, 230, 29
+		}
+		if cnt >= 10 and cnt <= 16 {
+			color 163, 73, 164
+		}
+		if cnt >= 17 and cnt <= 26 {
+			color 255, 172, 39
+		}
+		if cnt >= 27 and cnt <= 32 {
+			color 63, 72, 204
+		}
+		if cnt >= 33 and cnt <= 37 {
+			color 0, 162, 232
+		}
+		if cnt >= 38 and cnt <= 41 {
+			color 153, 217, 234
+		}
+		if cnt >= 42 and cnt <= 49 {
+			color 237, 28, 36
+		}
+		
+		boxf points_japan_x, points_japan_y, points_japan_x + 144, points_japan_y + 28
+	
+		color 255, 255, 255
+		font s_font, 16 : cmes an_administrative_division.cnt, points_japan_x, points_japan_y + 5, points_japan_x + 144, points_japan_y + 28
+	
+		points_japan_y += 33
+	
+		if points_japan_y >= 150 + (33*10) {
+			points_japan_x += 164 + 10
+			points_japan_y = 150
+		}
+		
+		await 1
+	
+	loop
+	
+	stop
+
+*points_cities
+	points_city_x = 25
+	points_city_y = 50
+	
+*points_cities_2
+	
+	redraw 0
+	
+	color 230, 230, 230 : boxf
+	
+	onclick gosub *click_on_points
+	
+	points_status = "select_a_point"
+	
+	points_in_the_administrative_division = 0
+	
+	repeat
+		notesel cities
+		noteget a_point_buf, (cnt + an_administrative_division_start_line + 1)
+	
+		;他の地域まで来ていたら読み込み終了
+		if instr( a_point_buf, 0, "[" ) ! -1 {
+			break
+		}
+	
+		;その地域区分内の地点の数を足す
+		if a_point_buf ! "" {
+			split a_point_buf, ", ", a_point(points_in_the_administrative_division), not_use, a_point_2(points_in_the_administrative_division)
+			points_in_the_administrative_division ++
+		}
+	
+		await 1
+	loop
+	
+	old_points_city_x = points_city_x
+	old_points_city_y = points_city_y
+				
+	repeat points_in_the_administrative_division
+	
+		color 0, 0, 0
+		font s_font, 13 : pos points_city_x, points_city_y + 5 : mes ""+a_point.cnt+""
+		font s_font, 10 : pos points_city_x+ 2, points_city_y + 22 : mes ""+a_point_2.cnt+""
+	
+		points_city_y += 33
+		
+		if points_city_y >= old_points_city_y + ( 13 * 33 ) {
+			points_city_x += 164 + 10
+			points_city_y = old_points_city_y
+		}
+		
+		await 1
+	
+	loop
+		
+	
+	redraw 1
+	
+	repeat
+		mousew_buf = mousew
+		if mousew_buf > 24 {
+			if old_points_city_x + 41 <= 25 {
+				points_city_x = old_points_city_x + 41
+			}
+			points_city_y = 50
+			
+			goto_points_cities_2 = 1
+			break
+		}
+		if mousew_buf < -24 {
+			if old_points_city_x - 41 >= -1 * ( (164+10) * (points_in_the_administrative_division/13) + (164+10) ) {
+				points_city_x = old_points_city_x - 41
+			}
+			points_city_y = 50
+			
+			goto_points_cities_2 = 1
+			break
+		}
+	
+		wait 10
+	loop
+	
+	if goto_points_cities_2 = 1 {
+		goto_points_cities_2 = 0
+		goto*points_cities_2
+	}
+	
+	stop
+	
+*click_on_points
+	if points_status = "select_country" and click_range( 200, 50, 400, 100 ) = 1 {
+		goto*points_japan
+	}
+	
+	;クリックされた地域を検出
+	if points_status = "select_administrative_division" and click_range( 25, 150, 875, 480 ) = 1 {
+	
+		click_range_x = 25
+		click_range_y = 150
+		
+		repeat administrative_divisions_in_the_country
+			
+			if mousex >= click_range_x and mousey >= click_range_y and mousex <= click_range_x + 144 and mousey <= click_range_y + 28 {
+				points_clicked_id = cnt
+				break
+			}
+		
+			click_range_y += 33
+		
+			if click_range_y >= 150 + (33*10) {
+				click_range_x += 164 + 10
+				click_range_y = 150
+			}
+		
+			await 1
+		
+		loop
+	
+		notesel cities
+		noteload "data/cities.txt"
+	
+		repeat notemax
+			notesel cities
+			noteget cities_buf, cnt
+			
+			if instr( cities_buf, 0, "["+an_administrative_division(points_clicked_id)+"]" ) ! -1 {
+				an_administrative_division_start_line = cnt
+			}
+			await 1
+		loop
+	
+		goto*points_cities
+		
+		stop
+	
+	}
+	
+	if points_status = "select_a_point" {
+	}
+	
+	return
+
+*registration_home
+	notesel config
+	noteadd city_name_on_xml, 1, 1
+	notesave "data/config.dat"
+	
+	home = city_name_on_xml
+	
+	dialog"登録地点を変更しました"
+	
+	return
+
+*display_registered_cites
+	redraw 0
+	
+	onclick *click_on_display_registered_cites
+	
+	color 255, 255, 255 : boxf 670, 25, 870, 200
+	
+	sdim registered_city_jp, registered_cities_total
+	sdim registered_city_jp_2, registered_cities_total
+	
+	cnt1 = 0
+	
+	repeat registered_cities_total
+	
+		cnt1 = cnt
+	
+		registered_city_jp_buf = ""
+		registered_city_jp_2_buf = ""
+	
+		registered_city_jp.cnt1 = ""
+		registered_city_jp_2.cnt1 = ""
+	
+		cnt2 = 0
+	
+		notesel cities
+		noteload "data/cities.txt"
+		
+		cities_total = notemax
+		
+		;都市の日本語名を検索
+		repeat cities_total
+		
+			cnt2 = cnt
+		
+			notesel cities
+			noteget cities_line, cnt2
+			
+			if instr( cities_line, 0, registered_city.cnt1 ) ! -1 {
+				split cities_line, ", ", registered_city_jp_buf, not_use, registered_city_jp_2_buf
+	
+				registered_city_jp.cnt1 = registered_city_jp_buf
+				registered_city_jp_2.cnt1 = registered_city_jp_2_buf
+	
+				;都市名から記号を削除
+				if instr( registered_city_jp.cnt1, 0, "★" ) ! -1 {
+					registered_city_jp.cnt1 = strmid( registered_city_jp.cnt1, 2, strlen( registered_city_jp.cnt1 ) )
+				}
+				if instr( registered_city_jp_2.cnt1, 0, "#" ) ! -1 {
+					registered_city_jp_2.cnt1 = strmid( registered_city_jp_2.cnt1, 0, instr( registered_city_jp_2.cnt1, 0, "#" ) )
+				}
+				
+				break
+			}
+		
+			await 0.1
+		loop
+	
+		;都市名を表示
+		font s_font, 14
+		color : pos 675, 25 + (cnt*30) + 7
+		
+		if registered_city_jp_buf = "" {
+			mes registered_city.cnt1
+		}else{
+			mes registered_city_jp.cnt1
+		}
+	
+		font s_font, 10
+		color : pos 678, 45 + (cnt*30) + 5
+		
+		if registered_city_jp_2_buf ! "" {
+			mes registered_city_jp_2.cnt1
+		}
+	
+		await 1
+	
+	loop
+	
+	redraw 1
+	
+	buffer 32
+		gmode 0 : gcopy 0, 670, 25, 200, 175
+	gsel 0
+	
+	;マウスがボタンの上に置かれたときにハイライトする
+	repeat
+	
+		redraw 0
+	
+		if click_range( 670, 25, 870, 200 ) = 1 {
+	
+			under_mouse_city = ( mousey - 25 ) / 30
+			
+			if under_mouse_city <= registered_cities_total - 1 {
+				
+				pos 670, 25 : gcopy 32, 0, 0, 200, 175
+		
+				color 0, 162, 232 : boxf 670, 25 + (under_mouse_city*30) + 7, 870, 55 + (under_mouse_city*30) + 7
+		
+				;都市名を表示
+				font s_font, 14
+				color : pos 675, 25 + (under_mouse_city*30) + 7
+				
+				if registered_city_jp.under_mouse_city = "" {
+					mes registered_city.under_mouse_city
+				}else{
+					mes registered_city_jp.under_mouse_city
+				}
+			
+				font s_font, 10
+				color : pos 678, 45 + (under_mouse_city*30) + 5
+				
+				if registered_city_jp.under_mouse_city ! "" {
+					mes registered_city_jp_2.under_mouse_city
+				}
+				
+			}
+		}
+	
+		redraw 1
+	
+		wait 1
+	
+	loop
+	
+	stop
+
+*click_on_display_registered_cites
+	if click_range( 670, 25, 870, 200 ) = 1 {
+		
+		if registered_city_jp.under_mouse_city = "" {
+			search_word = registered_city.under_mouse_city
+		}else{
+			search_word = registered_city_jp_2.under_mouse_city
+		}
+	
+		goto*city_search
+	}
+	
+	gosub*click_on_display
+	
+	stop
+
+*registration_city
+	notesel config
+	noteadd city_name_on_xml, -1
+	notesave "data/config.dat"
+	
+	dialog"登録地点を変更しました"
+	
+	return
+	
+*city_search
+	clrobj
+	color 255, 255, 255 : boxf
+	
+	onclick 0
+	
+	;読み込み中アイコンをもう一度表示
+	file = ""+dirinfo(0)+"\\img\\loading_1.gif"
+	mci "open \""+file+"\" alias Tenki_Watcher type mpegvideo style child parent "+hwnd+""
+	mci "put Tenki_Watcher window at 402 152 0 0"
+	mci "play Tenki_Watcher repeat"
+	
+	font s_font, 14 : color 0, 0, 0
+	cmes "読み込み中です...", 0, 300, 900, 320
+	
+	search_word_old = search_word
+	
+	;検索モードは「q（都市名直接指定）」
+	get_mode = "q"
+	city_q = search_word
+	
+	from_city_search = 1
+	
+	goto*get_now_weather
+
+*change_symbol_name		;英語の天気名を日本語に変換
+	if weather_symbol_name = "thunderstorm with light rain" 	: weather_symbol_group = "雷雨" :  wallpaper = 3 : weather_symbol_name_jp = "小雨を伴う雷雨"
+	if weather_symbol_name = "thunderstorm with rain"			: weather_symbol_group = "雷雨" :  wallpaper = 3 : weather_symbol_name_jp = "雷雨"
+	if weather_symbol_name = "thunderstorm with heavy rain" 	: weather_symbol_group = "雷雨" :  wallpaper = 3 : weather_symbol_name_jp = "大雨を伴う雷雨"
+	if weather_symbol_name = "light thunderstorm" 				: weather_symbol_group = "雷雨" :  wallpaper = 3 : weather_symbol_name_jp = "弱い雷雨"
+	if weather_symbol_name = "thunderstorm" 					: weather_symbol_group = "雷雨" :  wallpaper = 3 : weather_symbol_name_jp = ""
+	if weather_symbol_name = "heavy thunderstorm" 				: weather_symbol_group = "雷雨" :  wallpaper = 3 : weather_symbol_name_jp = "激しい雷雨"
+	if weather_symbol_name = "ragged thunderstorm" 				: weather_symbol_group = "雷雨" :  wallpaper = 3 : weather_symbol_name_jp = "不規則な雷雨"
+	if weather_symbol_name = "thunderstorm with light drizzle"	: weather_symbol_group = "雷雨" :  wallpaper = 3 : weather_symbol_name_jp = "薄い霧を伴う雷雨"
+	if weather_symbol_name = "thunderstorm with drizzle" 		: weather_symbol_group = "雷雨" :  wallpaper = 3 : weather_symbol_name_jp = "霧を伴う雷雨"
+	if weather_symbol_name = "thunderstorm with heavy drizzle"	: weather_symbol_group = "雷雨" :  wallpaper = 3 : weather_symbol_name_jp = "濃い霧を伴う雷雨"
+	
+	if weather_symbol_name = "light intensity drizzle" 			: weather_symbol_group = "にわか雨" :  wallpaper = 3 : weather_symbol_name_jp = "薄い霧"
+	if weather_symbol_name = "drizzle" 							: weather_symbol_group = "にわか雨" :  wallpaper = 3 : weather_symbol_name_jp = ""
+	if weather_symbol_name = "heavy intensity drizzle" 			: weather_symbol_group = "にわか雨" :  wallpaper = 3 : weather_symbol_name_jp = "濃い霧"
+	if weather_symbol_name = "light intensity drizzle rain" 	: weather_symbol_group = "にわか雨" :  wallpaper = 3 : weather_symbol_name_jp = "軽度の霧雨"
+	if weather_symbol_name = "drizzle rain" 					: weather_symbol_group = "にわか雨" :  wallpaper = 3 : weather_symbol_name_jp = "霧雨"
+	if weather_symbol_name = "heavy intensity drizzle rain" 	: weather_symbol_group = "にわか雨" :  wallpaper = 3 : weather_symbol_name_jp = "濃い霧雨"
+	if weather_symbol_name = "shower rain and drizzle" 			: weather_symbol_group = "にわか雨" :  wallpaper = 3 : weather_symbol_name_jp = "にわか雨を伴う霧"
+	if weather_symbol_name = "heavy shower rain and drizzle" 	: weather_symbol_group = "にわか雨" :  wallpaper = 3 : weather_symbol_name_jp = "激しいにわか雨を伴う霧"
+	if weather_symbol_name = "shower drizzle" 					: weather_symbol_group = "にわか雨" :  wallpaper = 3 : weather_symbol_name_jp = "にわか霧"
+	
+	if weather_symbol_name = "light rain" 						: weather_symbol_group = "雨" :  wallpaper = 3 : weather_symbol_name_jp = "小雨"
+	if weather_symbol_name = "moderate rain" 					: weather_symbol_group = "雨" :  wallpaper = 3 : weather_symbol_name_jp = "並雨"
+	if weather_symbol_name = "heavy intensity rain" 			: weather_symbol_group = "雨" :  wallpaper = 3 : weather_symbol_name_jp = "大雨"
+	if weather_symbol_name = "very heavy rain" 					: weather_symbol_group = "雨" :  wallpaper = 3 : weather_symbol_name_jp = "とても激しい雨"
+	if weather_symbol_name = "extreme rain" 					: weather_symbol_group = "雨" :  wallpaper = 3 : weather_symbol_name_jp = "過激なほど激しい雨"
+	if weather_symbol_name = "freezing rain" 					: weather_symbol_group = "雨" :  wallpaper = 3 : weather_symbol_name_jp = "とても冷たい雨"
+	if weather_symbol_name = "light intensity shower rain" 		: weather_symbol_group = "にわか雨" :  wallpaper = 3 : weather_symbol_name_jp = "軽度のにわか雨"
+	if weather_symbol_name = "shower rain" 						: weather_symbol_group = "にわか雨" :  wallpaper = 3 : weather_symbol_name_jp = "にわか雨"
+	if weather_symbol_name = "heavy intensity shower rain"		: weather_symbol_group = "にわか雨" :  wallpaper = 3 : weather_symbol_name_jp = "激しいにわか雨"
+	if weather_symbol_name = "ragged shower rain" 				: weather_symbol_group = "にわか雨" :  wallpaper = 3 : weather_symbol_name_jp = "不規則なにわか雨"
+	
+	if weather_symbol_name = "light snow" 						: weather_symbol_group = "雪" :  wallpaper = 4 : weather_symbol_name_jp = "小雪"
+	if weather_symbol_name = "snow" 							: weather_symbol_group = "雪" :  wallpaper = 4 : weather_symbol_name_jp = ""
+	if weather_symbol_name = "heavy snow" 						: weather_symbol_group = "雪" :  wallpaper = 4 : weather_symbol_name_jp = "大雪"
+	if weather_symbol_name = "sleet" 							: weather_symbol_group = "雪" :  wallpaper = 4 : weather_symbol_name_jp = "みぞれ"
+	if weather_symbol_name = "shower sleet" 					: weather_symbol_group = "雪" :  wallpaper = 4 : weather_symbol_name_jp = "にわかみぞれ"
+	if weather_symbol_name = "light rain and snow" 				: weather_symbol_group = "雪" :  wallpaper = 4 : weather_symbol_name_jp = "小雨ときどき雪"
+	if weather_symbol_name = "rain and snow" 					: weather_symbol_group = "雪" :  wallpaper = 4 : weather_symbol_name_jp = "雨ときどき雪"
+	if weather_symbol_name = "light shower snow" 				: weather_symbol_group = "雪" :  wallpaper = 4 : weather_symbol_name_jp = "にわか小雪"
+	if weather_symbol_name = "shower snow" 						: weather_symbol_group = "雪" :  wallpaper = 4 : weather_symbol_name_jp = "にわか雪"
+	if weather_symbol_name = "heavy shower snow" 				: weather_symbol_group = "雪" :  wallpaper = 4 : weather_symbol_name_jp = "激しいにわか雪"
+	
+	if weather_symbol_name = "mist" 							: weather_symbol_group = "霧" 				:  wallpaper = 2 : weather_symbol_name_jp = ""
+	if weather_symbol_name = "smoke" 							: weather_symbol_group = "煙たい"			:  wallpaper = 2 : weather_symbol_name_jp = "（大気汚染など）"
+	if weather_symbol_name = "haze" 							: weather_symbol_group = "霧" 				:  wallpaper = 2 : weather_symbol_name_jp = "薄い霧"
+	if weather_symbol_name = "sand, dust whirls" 				: weather_symbol_group = "砂塵旋風，黄砂" 	:  wallpaper = 2 : weather_symbol_name_jp = ""
+	if weather_symbol_name = "fog" 								: weather_symbol_group = "霧" 				:  wallpaper = 2 : weather_symbol_name_jp = "濃い霧"
+	if weather_symbol_name = "sand" 							: weather_symbol_group = "黄砂" 			:  wallpaper = 2 : weather_symbol_name_jp = ""
+	if weather_symbol_name = "dust" 							: weather_symbol_group = "塵" 				:  wallpaper = 2 : weather_symbol_name_jp = ""
+	if weather_symbol_name = "volcanic ash" 					: weather_symbol_group = "火山灰" 			:  wallpaper = 2 : weather_symbol_name_jp = ""
+	if weather_symbol_name = "squalls" 							: weather_symbol_group = "スコール" 		:  wallpaper = 2 : weather_symbol_name_jp = ""
+	if weather_symbol_name = "tornado" 							: weather_symbol_group = "竜巻"				:  wallpaper = 2 : weather_symbol_name_jp = ""
+	
+	if weather_symbol_name = "clear sky" 						: weather_symbol_group = "快晴" :  wallpaper = 1 : weather_symbol_name_jp = ""
+	
+	if weather_symbol_name = "few clouds" 						: weather_symbol_group = "曇り時々晴れ" 	:  wallpaper = 2 : weather_symbol_name_jp = ""
+	if weather_symbol_name = "scattered clouds" 				: weather_symbol_group = "くもり" 				:  wallpaper = 2 : weather_symbol_name_jp = "千切れ雲"
+	if weather_symbol_name = "broken clouds" 					: weather_symbol_group = "くもり" 				:  wallpaper = 2 : weather_symbol_name_jp = "千切れ雲"
+	if weather_symbol_name = "overcast clouds" 					: weather_symbol_group = "くもり" 				:  wallpaper = 2 : weather_symbol_name_jp = ""
+	
+	if weather_symbol_name = "tropical storm" 					: weather_symbol_group = "雨" 				:  wallpaper = 3 : weather_symbol_name_jp = "熱帯暴風雨"
+	if weather_symbol_name = "cold" 							: weather_symbol_group = "寒い" 			:  wallpaper = 2 : weather_symbol_name_jp = ""
+	if weather_symbol_name = "hot" 								: weather_symbol_group = "暑い" 			:  wallpaper = 1 : weather_symbol_name_jp = ""
+	if weather_symbol_name = "windy" 							: weather_symbol_group = "強風" 			:  wallpaper = 2 : weather_symbol_name_jp = ""
+	if weather_symbol_name = "hail" 							: weather_symbol_group = "あられ・ひょう" 	:  wallpaper = 4 : weather_symbol_name_jp = ""
+	
+	return
+    
+*get_error
+	dialog"天気予報の取得に失敗しました"
+	
+	;同じ都市の読み込みに二度失敗したら終了
+	if failed_city_q = city_q {
+		city_q = home
+	}else{
+		failed_city_q = city_q
+	}
+	
+	goto*get_now_weather
