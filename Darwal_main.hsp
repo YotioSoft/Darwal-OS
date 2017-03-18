@@ -97,7 +97,7 @@
 	sdim filelist_category, 1024, 1000, 0
 	
 *buffering
-	chdir "System/Computer/C§Drive/darwal/img/"
+	chdir "System/Computer/C@Drive/darwal/img/"
 	
 	celload "darwal_logo.png", 1
 	
@@ -272,9 +272,9 @@
 				filelist_category(eID,cnt) = "Directory"
 				
 				//ディレクトリ名に特殊文字"%"があった場合
-				if instr(filelist(eID,cnt), 0, "§") != -1 {
-					if instr(filelist(eID,cnt), 0, "§Drive") != -1 {
-						filelist(eID,cnt) = strmid(filelist(eID,cnt), 0, instr(filelist(eID,cnt), 0, "§Drive"))
+				if instr(filelist(eID,cnt), 0, "@") != -1 {
+					if instr(filelist(eID,cnt), 0, "@Drive") != -1 {
+						filelist(eID,cnt) = strmid(filelist(eID,cnt), 0, instr(filelist(eID,cnt), 0, "@Drive"))
 						filelist(eID,cnt) += "ドライブ（"+filelist(eID,cnt)+":\\）"
 						filelist_category(eID,cnt) = "Drive"
 					}
